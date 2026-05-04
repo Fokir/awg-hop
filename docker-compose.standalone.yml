@@ -2,10 +2,13 @@
 #  * образ из ghcr.io/fokir/awg-hop:latest (без локальной сборки),
 #  * админка HTTP на 127.0.0.1:8080 (для production используйте reverse proxy с TLS,
 #    см. docker-compose.example.yml),
-#  * UDP 51820 — порт AmneziaWG.
+#  * UDP 51820 — порт AmneziaWG (можно изменить через AWGHOP_PUBLIC_UDP_PORT).
 #
 # Запуск:
 #   docker compose -f docker-compose.standalone.yml up -d
+#
+# Если порт 51820 уже занят (например, ранее стоял wg-easy):
+#   AWGHOP_PUBLIC_UDP_PORT=51821 docker compose -f docker-compose.standalone.yml up -d
 #
 # По завершении работы:
 #   docker compose -f docker-compose.standalone.yml down
@@ -16,7 +19,7 @@ services:
     container_name: awghop
     ports:
       - "127.0.0.1:8080:8080"
-      - "51820:51820/udp"
+      - "${AWGHOP_PUBLIC_UDP_PORT:-51820}:51820/udp"
     environment:
       AWGHOP_LISTEN: ":8080"
       AWGHOP_DATA: /data

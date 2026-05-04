@@ -7,12 +7,16 @@
 #  1. Скопируйте этот файл как docker-compose.yml.
 #  2. Задайте AWGHOP_DOMAIN и AWGHOP_LE_EMAIL в .env (рядом с compose).
 #  3. (опц.) AWGHOP_IMAGE_TAG=v0.2.0 — закрепить версию образа (по умолчанию latest).
-#  4. (опц.) AWGHOP_ALLOWED_ORIGINS — если SPA размещается на другом домене.
+#  4. (опц.) AWGHOP_PUBLIC_UDP_PORT=51820 — внешний UDP, на котором клиенты
+#     достучатся до AmneziaWG (по умолчанию 51820). Меняйте, если на хосте уже
+#     занят 51820 (например, ранее стоял wg-easy / нативный wg-quick).
+#  5. (опц.) AWGHOP_ALLOWED_ORIGINS — если SPA размещается на другом домене.
 #
 # Минимальный .env:
 #   AWGHOP_DOMAIN=awghop.example.com
 #   AWGHOP_LE_EMAIL=admin@example.com
 #   AWGHOP_IMAGE_TAG=latest
+#   AWGHOP_PUBLIC_UDP_PORT=51820
 
 services:
   awghop:
@@ -21,7 +25,7 @@ services:
     expose:
       - "8080"
     ports:
-      - "51820:51820/udp"
+      - "${AWGHOP_PUBLIC_UDP_PORT:-51820}:51820/udp"
     environment:
       AWGHOP_LISTEN: ":8080"
       AWGHOP_DATA: /data

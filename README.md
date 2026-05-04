@@ -109,6 +109,37 @@
 
 ---
 
+### Если порт 51820 занят (другой WireGuard / wg-easy на хосте)
+
+Симптом — `Bind for 0.0.0.0:51820 failed: port is already allocated` при `docker compose up`.
+
+Найдите, кто держит порт:
+
+```bash
+sudo ss -ulpn | grep 51820
+docker ps --filter publish=51820
+```
+
+Дальше один из двух вариантов:
+
+* **Освободить 51820** (если это старый wg-easy, который вы заменяете на AWG Hop):
+
+  ```bash
+  docker stop wg-easy && docker rm wg-easy           # если wg-easy в Docker
+  sudo systemctl stop  wg-quick@wg0                  # если нативный wg на хосте
+  sudo systemctl disable wg-quick@wg0
+  docker compose up -d
+  ```
+
+* **Поднять AWG Hop на другом UDP-порте**, не трогая существующий сервис. В `.env` пропишите `AWGHOP_PUBLIC_UDP_PORT` и перепустите:
+
+  ```bash
+  echo 'AWGHOP_PUBLIC_UDP_PORT=51821' >> .env
+  docker compose up -d
+  ```
+
+  Внутри контейнера AmneziaWG продолжает слушать `51820/udp` — меняется только наружный маппинг. После запуска зайдите в админку → **Настройки → Входной AmneziaWG** и в `Public Endpoint` укажите `<публичный_IP_или_домен>:51821`, нажмите **Сохранить**, затем **Применить** на Dashboard. Все вновь сгенерированные клиентские `.conf` будут содержать новый endpoint.
+
 ### Обновление и закрепление версии
 
 ```bash
