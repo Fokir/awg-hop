@@ -6,9 +6,9 @@ import "time"
 type TunnelOfflinePolicy string
 
 const (
-	// TunnelOfflineBlock — отказать в Apply, если у пира выбран недоступный туннель.
+	// TunnelOfflineBlock — отказать в Apply, если у клиента выбран недоступный upstream.
 	TunnelOfflineBlock TunnelOfflinePolicy = "block"
-	// TunnelOfflineIgnore — игнорировать пира (правило не создавать), Apply продолжается.
+	// TunnelOfflineIgnore — игнорировать клиента (правило не создавать), Apply продолжается.
 	TunnelOfflineIgnore TunnelOfflinePolicy = "ignore"
 )
 
@@ -21,8 +21,8 @@ type SystemSettings struct {
 	UpdatedAt           time.Time           `json:"updated_at"`
 }
 
-// PeerStatus — runtime-метрики пира из `awg show <iface> dump`.
-type PeerStatus struct {
+// ClientStatus — runtime-метрики клиента из `awg show <iface> dump` (входной интерфейс).
+type ClientStatus struct {
 	PublicKey         string `json:"public_key"`
 	Endpoint          string `json:"endpoint,omitempty"`
 	LatestHandshake   int64  `json:"latest_handshake_unix"`
@@ -31,8 +31,8 @@ type PeerStatus struct {
 	PersistentKeepAlv int    `json:"persistent_keepalive,omitempty"`
 }
 
-// EgressTunnelStatus — runtime-данные исходящего туннеля.
-type EgressTunnelStatus struct {
+// UpstreamStatus — runtime-данные нашего исходящего AWG-подключения.
+type UpstreamStatus struct {
 	InterfaceUp     bool   `json:"interface_up"`
 	LatestHandshake int64  `json:"latest_handshake_unix"`
 	TransferRxBytes int64  `json:"transfer_rx_bytes"`

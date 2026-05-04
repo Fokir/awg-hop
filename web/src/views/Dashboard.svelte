@@ -2,10 +2,10 @@
   import { onMount } from 'svelte';
   import { api, ApiError } from '../lib/api';
   import { formatBytes, formatHandshake, isFreshHandshake } from '../lib/format';
-  import type { Peer, EgressTunnel, SystemStatus } from '../lib/types';
+  import type { Client, UpstreamTunnel, SystemStatus } from '../lib/types';
 
-  let peers = $state<Peer[]>([]);
-  let tunnels = $state<EgressTunnel[]>([]);
+  let clients = $state<Client[]>([]);
+  let upstreams = $state<UpstreamTunnel[]>([]);
   let status = $state<SystemStatus | null>(null);
   let error = $state<string | null>(null);
   let applyMsg = $state<string | null>(null);
@@ -23,9 +23,9 @@
 
   async function refresh() {
     try {
-      [peers, tunnels, status] = await Promise.all([
-        api<Peer[]>('/api/v1/peers'),
-        api<EgressTunnel[]>('/api/v1/egress-tunnels'),
+      [clients, upstreams, status] = await Promise.all([
+        api<Client[]>('/api/v1/clients'),
+        api<UpstreamTunnel[]>('/api/v1/upstreams'),
         api<SystemStatus>('/api/v1/system/status'),
       ]);
       error = null;
@@ -48,13 +48,13 @@
     }
   }
 
-  const enabledPeers = $derived(peers.filter((p) => p.enabled));
-  const onlinePeers = $derived(
-    enabledPeers.filter((p) => isFreshHandshake(p.status?.latest_handshake_unix ?? 0)),
+  const enabledClients = $derived(clients.filter((c) => c.enabled));
+  const onlineClients = $derived(
+    enabledClients.filter((c) => isFreshHandshake(c.status?.latest_handshake_unix ?? 0)),
   );
-  const enabledTunnels = $derived(tunnels.filter((t) => t.enabled));
-  const upTunnels = $derived(
-    enabledTunnels.filter((t) => isFreshHandshake(t.status?.latest_handshake_unix ?? 0)),
+  const enabledUpstreams = $derived(upstreams.filter((t) => t.enabled));
+  const upUpstreams = $derived(
+    enabledUpstreams.filter((t) => isFreshHandshake(t.status?.latest_handshake_unix ?? 0)),
   );
 </script>
 
@@ -69,12 +69,12 @@
 
 <div class="cards">
   <div class="card">
-    <div class="num">{onlinePeers.length} / {enabledPeers.length}</div>
-    <div class="label">Активные пиры (handshake &lt; 3 мин)</div>
+    <div class="num">{onlineClients.length} / {enabledClients.length}</div>
+    <div class="label">Активные клиенты (handshake &lt; 3 мин)</div>
   </div>
   <div class="card">
-    <div class="num">{upTunnels.length} / {enabledTunnels.length}</div>
-    <div class="label">Доступные исходящие туннели</div>
+    <div class="num">{upUpstreams.length} / {enabledUpstreams.length}</div>
+    <div class="label">Активные upstream-подключения</div>
   </div>
   <div class="card">
     <div class="num">{status?.policy_routing?.backend ?? '—'}</div>
@@ -86,7 +86,7 @@
 </div>
 
 <section>
-  <h2>Топ-5 пиров по обмену</h2>
+  <h2>Топ-5 клиентов по обмену</h2>
   <table>
     <thead>
       <tr>
@@ -97,27 +97,27 @@
       </tr>
     </thead>
     <tbody>
-      {#each [...peers].sort((a, b) => (b.status?.transfer_tx_bytes ?? 0) - (a.status?.transfer_tx_bytes ?? 0)).slice(0, 5) as p (p.id)}
+      {#each [...clients].sort((a, b) => (b.status?.transfer_tx_bytes ?? 0) - (a.status?.transfer_tx_bytes ?? 0)).slice(0, 5) as c (c.id)}
         <tr>
-          <td>{p.name}</td>
-          <td>{p.status?.latest_handshake_unix ? formatHandshake(p.status.latest_handshake_unix) : '—'}</td>
-          <td>{p.status ? formatBytes(p.status.transfer_rx_bytes) : '—'}</td>
-          <td>{p.status ? formatBytes(p.status.transfer_tx_bytes) : '—'}</td>
+          <td>{c.name}</td>
+          <td>{c.status?.latest_handshake_unix ? formatHandshake(c.status.latest_handshake_unix) : '—'}</td>
+          <td>{c.status ? formatBytes(c.status.transfer_rx_bytes) : '—'}</td>
+          <td>{c.status ? formatBytes(c.status.transfer_tx_bytes) : '—'}</td>
         </tr>
       {/each}
-      {#if peers.length === 0}
-        <tr><td colspan="4" class="muted center">Пиров пока нет.</td></tr>
+      {#if clients.length === 0}
+        <tr><td colspan="4" class="muted center">Клиентов пока нет.</td></tr>
       {/if}
     </tbody>
   </table>
 </section>
 
 <section>
-  <h2>Исходящие туннели</h2>
+  <h2>Upstream-подключения</h2>
   <table>
     <thead>
       <tr>
-        <th>Туннель</th>
+        <th>Имя</th>
         <th>Интерфейс</th>
         <th>Включён</th>
         <th>Handshake</th>
@@ -125,7 +125,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each tunnels as t (t.id)}
+      {#each upstreams as t (t.id)}
         <tr>
           <td>{t.name}</td>
           <td><code>{t.interface_name}</code></td>
@@ -148,8 +148,8 @@
           </td>
         </tr>
       {/each}
-      {#if tunnels.length === 0}
-        <tr><td colspan="5" class="muted center">Туннелей пока нет.</td></tr>
+      {#if upstreams.length === 0}
+        <tr><td colspan="5" class="muted center">Upstream-подключений пока нет.</td></tr>
       {/if}
     </tbody>
   </table>

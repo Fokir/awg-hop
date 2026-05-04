@@ -9,7 +9,9 @@ import (
 )
 
 // BuildIngressServerConf собирает AmneziaWG/WireGuard конфиг для входного интерфейса сервера.
-func BuildIngressServerConf(s domain.IngressSettings, peers []domain.Peer) string {
+//
+// Каждый client становится секцией [Peer] в серверном конфиге.
+func BuildIngressServerConf(s domain.IngressSettings, clients []domain.Client) string {
 	addr := ingressInterfaceAddress(s.ServerTunnelIP, s.TunnelSubnet)
 	var b strings.Builder
 	fmt.Fprintf(&b, "[Interface]\n")
@@ -37,15 +39,15 @@ func BuildIngressServerConf(s domain.IngressSettings, peers []domain.Peer) strin
 	fmt.Fprintf(&b, "H3 = %d\n", s.H3)
 	fmt.Fprintf(&b, "H4 = %d\n", s.H4)
 
-	for _, p := range peers {
-		if !p.Enabled {
+	for _, c := range clients {
+		if !c.Enabled {
 			continue
 		}
 		fmt.Fprintf(&b, "\n[Peer]\n")
-		fmt.Fprintf(&b, "PublicKey = %s\n", strings.TrimSpace(p.PublicKey))
-		fmt.Fprintf(&b, "AllowedIPs = %s\n", strings.TrimSpace(p.AllowedIPs))
-		if p.PresharedKey != nil && strings.TrimSpace(*p.PresharedKey) != "" {
-			fmt.Fprintf(&b, "PresharedKey = %s\n", *p.PresharedKey)
+		fmt.Fprintf(&b, "PublicKey = %s\n", strings.TrimSpace(c.PublicKey))
+		fmt.Fprintf(&b, "AllowedIPs = %s\n", strings.TrimSpace(c.AllowedIPs))
+		if c.PresharedKey != nil && strings.TrimSpace(*c.PresharedKey) != "" {
+			fmt.Fprintf(&b, "PresharedKey = %s\n", *c.PresharedKey)
 		}
 	}
 	return b.String()

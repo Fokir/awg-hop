@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS egress_tunnels (
+CREATE TABLE IF NOT EXISTS upstream_tunnels (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT NOT NULL,
 	interface_name TEXT NOT NULL UNIQUE,
@@ -8,4 +8,4 @@ CREATE TABLE IF NOT EXISTS egress_tunnels (
 	updated_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_egress_enabled ON egress_tunnels (enabled);
+CREATE INDEX IF NOT EXISTS idx_upstream_enabled ON upstream_tunnels (enabled);

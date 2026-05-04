@@ -17,47 +17,48 @@ import (
 	"awghop/internal/wgquick"
 )
 
-// egressView расширяет туннель runtime-статусом.
-type egressView struct {
-	domain.EgressTunnel
-	Status *domain.EgressTunnelStatus `json:"status,omitempty"`
+// upstreamView расширяет описание upstream-туннеля runtime-статусом.
+type upstreamView struct {
+	domain.UpstreamTunnel
+	Status *domain.UpstreamStatus `json:"status,omitempty"`
 }
 
-func (h *Handlers) resolveEgressSpec(ctx context.Context, et domain.EgressType, tunnelID *int64) (*int64, error) {
-	switch et {
-	case domain.EgressDirect:
+// resolveUpstreamSpec проверяет, что комбинация upstream_type/upstream_tunnel_id валидна.
+func (h *Handlers) resolveUpstreamSpec(ctx context.Context, ut domain.UpstreamType, tunnelID *int64) (*int64, error) {
+	switch ut {
+	case domain.UpstreamDirect:
 		return nil, nil
-	case domain.EgressViaTunnel:
+	case domain.UpstreamViaTunnel:
 		if tunnelID == nil {
-			return nil, errors.New("egress_tunnel_id is required for egress_awg")
+			return nil, errors.New("upstream_tunnel_id is required for via_upstream")
 		}
-		t, err := h.Store.GetEgressTunnel(ctx, *tunnelID)
+		t, err := h.Store.GetUpstreamTunnel(ctx, *tunnelID)
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, errors.New("egress tunnel not found")
+			return nil, errors.New("upstream tunnel not found")
 		}
 		if err != nil {
 			return nil, err
 		}
 		if !t.Enabled {
-			return nil, errors.New("egress tunnel is disabled")
+			return nil, errors.New("upstream tunnel is disabled")
 		}
 		return tunnelID, nil
 	default:
-		return nil, errors.New("invalid egress_type")
+		return nil, errors.New("invalid upstream_type")
 	}
 }
 
-func (h *Handlers) ListEgressTunnels(w http.ResponseWriter, r *http.Request) {
-	list, err := h.Store.ListEgressTunnels(r.Context())
+func (h *Handlers) ListUpstreams(w http.ResponseWriter, r *http.Request) {
+	list, err := h.Store.ListUpstreamTunnels(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	out := make([]egressView, 0, len(list))
+	out := make([]upstreamView, 0, len(list))
 	for _, t := range list {
-		v := egressView{EgressTunnel: t}
+		v := upstreamView{UpstreamTunnel: t}
 		if h.Net != nil && t.Enabled {
-			st := h.Net.EgressStatus(r.Context(), t.InterfaceName)
+			st := h.Net.UpstreamStatus(r.Context(), t.InterfaceName)
 			v.Status = &st
 		}
 		out = append(out, v)
@@ -65,15 +66,15 @@ func (h *Handlers) ListEgressTunnels(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, out)
 }
 
-type createEgressBody struct {
+type createUpstreamBody struct {
 	Name          string `json:"name"`
 	InterfaceName string `json:"interface_name"`
 	ConfigText    string `json:"config_text"`
 	Enabled       *bool  `json:"enabled"`
 }
 
-func (h *Handlers) CreateEgressTunnel(w http.ResponseWriter, r *http.Request) {
-	var body createEgressBody
+func (h *Handlers) CreateUpstream(w http.ResponseWriter, r *http.Request) {
+	var body createUpstreamBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_json", err.Error())
 		return
@@ -92,13 +93,13 @@ func (h *Handlers) CreateEgressTunnel(w http.ResponseWriter, r *http.Request) {
 	if body.Enabled != nil {
 		en = *body.Enabled
 	}
-	t := domain.EgressTunnel{Name: body.Name, InterfaceName: body.InterfaceName, ConfigText: body.ConfigText, Enabled: en}
-	id, err := h.Store.InsertEgressTunnel(r.Context(), t)
+	t := domain.UpstreamTunnel{Name: body.Name, InterfaceName: body.InterfaceName, ConfigText: body.ConfigText, Enabled: en}
+	id, err := h.Store.InsertUpstreamTunnel(r.Context(), t)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "insert", err.Error())
 		return
 	}
-	out, err := h.Store.GetEgressTunnel(r.Context(), id)
+	out, err := h.Store.GetUpstreamTunnel(r.Context(), id)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "reload", err.Error())
 		return
@@ -106,13 +107,13 @@ func (h *Handlers) CreateEgressTunnel(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusCreated, out)
 }
 
-func (h *Handlers) GetEgressTunnel(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) GetUpstream(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_id", "")
 		return
 	}
-	t, err := h.Store.GetEgressTunnel(r.Context(), id)
+	t, err := h.Store.GetUpstreamTunnel(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			respond.Error(w, http.StatusNotFound, "not_found", "")
@@ -121,28 +122,28 @@ func (h *Handlers) GetEgressTunnel(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	v := egressView{EgressTunnel: t}
+	v := upstreamView{UpstreamTunnel: t}
 	if h.Net != nil && t.Enabled {
-		st := h.Net.EgressStatus(r.Context(), t.InterfaceName)
+		st := h.Net.UpstreamStatus(r.Context(), t.InterfaceName)
 		v.Status = &st
 	}
 	respond.JSON(w, http.StatusOK, v)
 }
 
-type patchEgressBody struct {
+type patchUpstreamBody struct {
 	Name          *string `json:"name"`
 	InterfaceName *string `json:"interface_name"`
 	ConfigText    *string `json:"config_text"`
 	Enabled       *bool   `json:"enabled"`
 }
 
-func (h *Handlers) PatchEgressTunnel(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) PatchUpstream(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_id", "")
 		return
 	}
-	t, err := h.Store.GetEgressTunnel(r.Context(), id)
+	t, err := h.Store.GetUpstreamTunnel(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			respond.Error(w, http.StatusNotFound, "not_found", "")
@@ -151,7 +152,7 @@ func (h *Handlers) PatchEgressTunnel(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	var body patchEgressBody
+	var body patchUpstreamBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_json", err.Error())
 		return
@@ -174,21 +175,21 @@ func (h *Handlers) PatchEgressTunnel(w http.ResponseWriter, r *http.Request) {
 		t.Enabled = *body.Enabled
 	}
 	if wasEnabled && !t.Enabled {
-		n, err := h.Store.CountPeersOnEgressTunnel(r.Context(), id)
+		n, err := h.Store.CountClientsOnUpstreamTunnel(r.Context(), id)
 		if err != nil {
 			respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 			return
 		}
 		if n > 0 {
-			respond.Error(w, http.StatusConflict, "in_use", "cannot disable tunnel while peers reference it")
+			respond.Error(w, http.StatusConflict, "in_use", "cannot disable upstream while clients reference it")
 			return
 		}
 	}
-	if err := h.Store.UpdateEgressTunnel(r.Context(), t); err != nil {
+	if err := h.Store.UpdateUpstreamTunnel(r.Context(), t); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "update", err.Error())
 		return
 	}
-	out, err := h.Store.GetEgressTunnel(r.Context(), id)
+	out, err := h.Store.GetUpstreamTunnel(r.Context(), id)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "reload", err.Error())
 		return
@@ -196,15 +197,15 @@ func (h *Handlers) PatchEgressTunnel(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, out)
 }
 
-func (h *Handlers) DeleteEgressTunnel(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) DeleteUpstream(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_id", "")
 		return
 	}
-	err = h.Store.DeleteEgressTunnel(r.Context(), id)
-	if errors.Is(err, store.ErrEgressInUse) {
-		respond.Error(w, http.StatusConflict, "in_use", "tunnel is referenced by peers; reassign peers first")
+	err = h.Store.DeleteUpstreamTunnel(r.Context(), id)
+	if errors.Is(err, store.ErrUpstreamInUse) {
+		respond.Error(w, http.StatusConflict, "in_use", "upstream is referenced by clients; reassign clients first")
 		return
 	}
 	if err != nil {

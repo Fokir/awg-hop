@@ -10,4 +10,4 @@ CREATE TABLE IF NOT EXISTS system_settings (
 INSERT OR IGNORE INTO system_settings (id, external_interface, tunnel_offline_policy, client_allowed_ipv4, client_allowed_ipv6, updated_at)
 VALUES (1, '', 'block', '0.0.0.0/0', '', strftime('%Y-%m-%dT%H:%M:%SZ','now'));
 
-CREATE INDEX IF NOT EXISTS idx_egress_iface_name ON egress_tunnels (interface_name);
+CREATE INDEX IF NOT EXISTS idx_upstream_iface_name ON upstream_tunnels (interface_name);

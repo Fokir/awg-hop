@@ -147,8 +147,8 @@ func (s *Store) UpdateIngressSettings(ctx context.Context, in domain.IngressSett
 	return err
 }
 
-func (s *Store) ListPeerAllowedIPs(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT allowed_ips FROM peers`)
+func (s *Store) ListClientAllowedIPs(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT allowed_ips FROM clients`)
 	if err != nil {
 		return nil, err
 	}
@@ -164,77 +164,74 @@ func (s *Store) ListPeerAllowedIPs(ctx context.Context) ([]string, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) ListPeers(ctx context.Context) ([]domain.Peer, error) {
+func (s *Store) ListClients(ctx context.Context) ([]domain.Client, error) {
 	rows, err := s.db.QueryContext(ctx, `
-	SELECT id, name, public_key, private_key, preshared_key, allowed_ips, enabled, egress_type, egress_tunnel_id, created_at, updated_at
-	FROM peers ORDER BY id`)
+	SELECT id, name, public_key, private_key, preshared_key, allowed_ips, enabled, upstream_type, upstream_tunnel_id, created_at, updated_at
+	FROM clients ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var list []domain.Peer
+	var list []domain.Client
 	for rows.Next() {
-		p, err := scanPeer(rows)
+		c, err := scanClient(rows)
 		if err != nil {
 			return nil, err
 		}
-		list = append(list, p)
+		list = append(list, c)
 	}
 	return list, rows.Err()
 }
 
-func scanPeer(sc interface {
+func scanClient(sc interface {
 	Scan(dest ...any) error
-}) (domain.Peer, error) {
-	var p domain.Peer
+}) (domain.Client, error) {
+	var c domain.Client
 	var psk sql.NullString
-	var egress sql.NullInt64
+	var upstream sql.NullInt64
 	var created, updated string
-	err := sc.Scan(&p.ID, &p.Name, &p.PublicKey, &p.PrivateKey, &psk, &p.AllowedIPs, &p.Enabled, &p.EgressType, &egress, &created, &updated)
+	err := sc.Scan(&c.ID, &c.Name, &c.PublicKey, &c.PrivateKey, &psk, &c.AllowedIPs, &c.Enabled, &c.UpstreamType, &upstream, &created, &updated)
 	if err != nil {
-		return p, err
+		return c, err
 	}
 	if psk.Valid {
 		s := psk.String
-		p.PresharedKey = &s
+		c.PresharedKey = &s
 	}
-	if egress.Valid {
-		v := egress.Int64
-		p.EgressTunnelID = &v
+	if upstream.Valid {
+		v := upstream.Int64
+		c.UpstreamTunnelID = &v
 	}
-	var err2 error
-	p.CreatedAt, err2 = time.Parse(time.RFC3339, created)
-	if err2 != nil {
-		p.CreatedAt = time.Time{}
+	if t, err := time.Parse(time.RFC3339, created); err == nil {
+		c.CreatedAt = t
 	}
-	p.UpdatedAt, err2 = time.Parse(time.RFC3339, updated)
-	if err2 != nil {
-		p.UpdatedAt = time.Time{}
+	if t, err := time.Parse(time.RFC3339, updated); err == nil {
+		c.UpdatedAt = t
 	}
-	return p, nil
+	return c, nil
 }
 
-func (s *Store) GetPeer(ctx context.Context, id int64) (domain.Peer, error) {
+func (s *Store) GetClient(ctx context.Context, id int64) (domain.Client, error) {
 	row := s.db.QueryRowContext(ctx, `
-	SELECT id, name, public_key, private_key, preshared_key, allowed_ips, enabled, egress_type, egress_tunnel_id, created_at, updated_at
-	FROM peers WHERE id = ?`, id)
-	return scanPeer(row)
+	SELECT id, name, public_key, private_key, preshared_key, allowed_ips, enabled, upstream_type, upstream_tunnel_id, created_at, updated_at
+	FROM clients WHERE id = ?`, id)
+	return scanClient(row)
 }
 
-func (s *Store) InsertPeer(ctx context.Context, p domain.Peer) (int64, error) {
+func (s *Store) InsertClient(ctx context.Context, c domain.Client) (int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	var psk any
-	if p.PresharedKey != nil {
-		psk = *p.PresharedKey
+	if c.PresharedKey != nil {
+		psk = *c.PresharedKey
 	}
-	var egress any
-	if p.EgressTunnelID != nil {
-		egress = *p.EgressTunnelID
+	var upstream any
+	if c.UpstreamTunnelID != nil {
+		upstream = *c.UpstreamTunnelID
 	}
 	res, err := s.db.ExecContext(ctx, `
-	INSERT INTO peers (name, private_key, public_key, preshared_key, allowed_ips, enabled, egress_type, egress_tunnel_id, created_at, updated_at)
+	INSERT INTO clients (name, private_key, public_key, preshared_key, allowed_ips, enabled, upstream_type, upstream_tunnel_id, created_at, updated_at)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.Name, p.PrivateKey, p.PublicKey, psk, p.AllowedIPs, p.Enabled, string(p.EgressType), egress, now, now,
+		c.Name, c.PrivateKey, c.PublicKey, psk, c.AllowedIPs, c.Enabled, string(c.UpstreamType), upstream, now, now,
 	)
 	if err != nil {
 		return 0, err
@@ -242,25 +239,25 @@ func (s *Store) InsertPeer(ctx context.Context, p domain.Peer) (int64, error) {
 	return res.LastInsertId()
 }
 
-func (s *Store) UpdatePeer(ctx context.Context, p domain.Peer) error {
+func (s *Store) UpdateClient(ctx context.Context, c domain.Client) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	var psk any
-	if p.PresharedKey != nil {
-		psk = *p.PresharedKey
+	if c.PresharedKey != nil {
+		psk = *c.PresharedKey
 	}
-	var egress any
-	if p.EgressTunnelID != nil {
-		egress = *p.EgressTunnelID
+	var upstream any
+	if c.UpstreamTunnelID != nil {
+		upstream = *c.UpstreamTunnelID
 	}
 	_, err := s.db.ExecContext(ctx, `
-	UPDATE peers SET name = ?, private_key = ?, public_key = ?, preshared_key = ?, allowed_ips = ?, enabled = ?, egress_type = ?, egress_tunnel_id = ?, updated_at = ?
+	UPDATE clients SET name = ?, private_key = ?, public_key = ?, preshared_key = ?, allowed_ips = ?, enabled = ?, upstream_type = ?, upstream_tunnel_id = ?, updated_at = ?
 	WHERE id = ?`,
-		p.Name, p.PrivateKey, p.PublicKey, psk, p.AllowedIPs, p.Enabled, string(p.EgressType), egress, now, p.ID,
+		c.Name, c.PrivateKey, c.PublicKey, psk, c.AllowedIPs, c.Enabled, string(c.UpstreamType), upstream, now, c.ID,
 	)
 	return err
 }
 
-func (s *Store) DeletePeer(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM peers WHERE id = ?`, id)
+func (s *Store) DeleteClient(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM clients WHERE id = ?`, id)
 	return err
 }

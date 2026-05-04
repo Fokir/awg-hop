@@ -59,29 +59,29 @@ func (h *Handlers) WgEasyImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.applyImport(r.Context(), in, res.Peers); err != nil {
+	if err := h.applyImport(r.Context(), in, res.Clients); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "import_failed", err.Error())
 		return
 	}
 
 	respond.JSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"peers":  len(res.Peers),
+		"status":  "ok",
+		"clients": len(res.Clients),
 	})
 }
 
-func (h *Handlers) applyImport(ctx context.Context, in domain.IngressSettings, peers []domain.Peer) error {
+func (h *Handlers) applyImport(ctx context.Context, in domain.IngressSettings, clients []domain.Client) error {
 	if err := h.Store.UpdateIngressSettings(ctx, in); err != nil {
 		return err
 	}
-	for _, p := range peers {
-		if p.PrivateKey == "" {
+	for _, c := range clients {
+		if c.PrivateKey == "" {
 			continue
 		}
-		if p.PublicKey == "" {
-			p.PublicKey = wgk.MustPublicFromPrivate(p.PrivateKey)
+		if c.PublicKey == "" {
+			c.PublicKey = wgk.MustPublicFromPrivate(c.PrivateKey)
 		}
-		if _, err := h.Store.InsertPeer(ctx, p); err != nil {
+		if _, err := h.Store.InsertClient(ctx, c); err != nil {
 			return err
 		}
 	}

@@ -1,4 +1,9 @@
--- AWG Hop MVP schema
+-- AWG Hop initial schema.
+--
+-- Терминология:
+--   * clients          — устройства конечных пользователей (аналог wg-easy clients).
+--   * upstream_tunnels — наши исходящие AmneziaWG-подключения, в которых наш
+--                        сервер выступает клиентом другого AWG-сервера.
 
 CREATE TABLE IF NOT EXISTS admin_account (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -35,7 +40,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	created_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS peers (
+CREATE TABLE IF NOT EXISTS clients (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT NOT NULL,
 	private_key TEXT NOT NULL,
@@ -43,10 +48,10 @@ CREATE TABLE IF NOT EXISTS peers (
 	preshared_key TEXT,
 	allowed_ips TEXT NOT NULL,
 	enabled INTEGER NOT NULL DEFAULT 1,
-	egress_type TEXT NOT NULL DEFAULT 'direct' CHECK (egress_type IN ('direct', 'egress_awg')),
-	egress_tunnel_id INTEGER,
+	upstream_type TEXT NOT NULL DEFAULT 'direct' CHECK (upstream_type IN ('direct', 'via_upstream')),
+	upstream_tunnel_id INTEGER,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_peers_enabled ON peers (enabled);
+CREATE INDEX IF NOT EXISTS idx_clients_enabled ON clients (enabled);

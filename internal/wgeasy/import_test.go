@@ -63,12 +63,12 @@ func TestParseAmneziaExport(t *testing.T) {
 	if res.Ingress.TunnelSubnet != "10.8.0.0/24" {
 		t.Fatalf("subnet: %q", res.Ingress.TunnelSubnet)
 	}
-	if len(res.Peers) != 2 {
-		t.Fatalf("want 2 peers, got %d", len(res.Peers))
+	if len(res.Clients) != 2 {
+		t.Fatalf("want 2 clients, got %d", len(res.Clients))
 	}
-	for _, p := range res.Peers {
-		if !strings.HasSuffix(p.AllowedIPs, "/32") {
-			t.Fatalf("peer allowed_ips not /32: %q", p.AllowedIPs)
+	for _, c := range res.Clients {
+		if !strings.HasSuffix(c.AllowedIPs, "/32") {
+			t.Fatalf("client allowed_ips not /32: %q", c.AllowedIPs)
 		}
 	}
 }

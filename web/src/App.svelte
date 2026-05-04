@@ -5,12 +5,12 @@
   import Bootstrap from './views/Bootstrap.svelte';
   import Login from './views/Login.svelte';
   import Dashboard from './views/Dashboard.svelte';
-  import Peers from './views/Peers.svelte';
-  import Tunnels from './views/Tunnels.svelte';
+  import Clients from './views/Clients.svelte';
+  import Upstreams from './views/Upstreams.svelte';
   import Settings from './views/Settings.svelte';
   import Backup from './views/Backup.svelte';
 
-  type View = 'dashboard' | 'peers' | 'tunnels' | 'settings' | 'backup';
+  type View = 'dashboard' | 'clients' | 'upstreams' | 'settings' | 'backup';
 
   let loading = $state(true);
   let setupComplete = $state(false);
@@ -31,7 +31,7 @@
         return;
       }
       try {
-        await api('/api/v1/peers');
+        await api('/api/v1/clients');
         loggedIn = true;
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) {
@@ -58,8 +58,8 @@
 
   const tabs: { id: View; label: string }[] = [
     { id: 'dashboard', label: 'Dashboard' },
-    { id: 'peers', label: 'Пиры' },
-    { id: 'tunnels', label: 'Исходящие туннели' },
+    { id: 'clients', label: 'Клиенты' },
+    { id: 'upstreams', label: 'Upstream-подключения' },
     { id: 'settings', label: 'Настройки' },
     { id: 'backup', label: 'Бэкап / Импорт' },
   ];
@@ -94,10 +94,10 @@
     {#if error}<p class="err">{error}</p>{/if}
     {#if view === 'dashboard'}
       <Dashboard />
-    {:else if view === 'peers'}
-      <Peers />
-    {:else if view === 'tunnels'}
-      <Tunnels />
+    {:else if view === 'clients'}
+      <Clients />
+    {:else if view === 'upstreams'}
+      <Upstreams />
     {:else if view === 'settings'}
       <Settings />
     {:else if view === 'backup'}

@@ -7,6 +7,14 @@ info:
       * httpOnly-сессионную cookie `awghop_session` (получается через `/auth/login`),
       * CSRF-токен `awghop_csrf` (cookie выставляется автоматически), отправляемый в
         заголовке `X-CSRF-Token` (двойная cookie pattern).
+
+    Терминология:
+      * `client` — устройство пользователя, подключающееся к нашему входному
+        AmneziaWG-серверу (аналог wg-easy «client»).
+      * `upstream` — наше исходящее AmneziaWG-подключение, в котором наш сервер
+        выступает клиентом удалённого AWG-сервера. Клиент с
+        `upstream_type=via_upstream` направит весь свой трафик через выбранный
+        `upstream_tunnel_id`.
 servers:
   - url: /api/v1
 security:
@@ -37,10 +45,13 @@ components:
       properties:
         setup_complete:
           type: boolean
-    EgressType:
+    UpstreamType:
       type: string
-      enum: [direct, egress_awg]
-    PeerStatus:
+      enum: [direct, via_upstream]
+      description: |
+        * `direct` — клиент выходит в интернет через NAT внешнего интерфейса контейнера.
+        * `via_upstream` — клиент маршрутизируется в указанный `upstream_tunnel_id`.
+    ClientStatus:
       type: object
       properties:
         public_key: { type: string }
@@ -49,7 +60,7 @@ components:
         transfer_rx_bytes: { type: integer, format: int64 }
         transfer_tx_bytes: { type: integer, format: int64 }
         persistent_keepalive: { type: integer }
-    Peer:
+    Client:
       type: object
       properties:
         id: { type: integer }
@@ -58,13 +69,13 @@ components:
         preshared_key: { type: string, nullable: true }
         allowed_ips: { type: string }
         enabled: { type: boolean }
-        egress_type: { $ref: '#/components/schemas/EgressType' }
-        egress_tunnel_id: { type: integer, nullable: true }
+        upstream_type: { $ref: '#/components/schemas/UpstreamType' }
+        upstream_tunnel_id: { type: integer, nullable: true }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         status:
-          $ref: '#/components/schemas/PeerStatus'
-    EgressTunnelStatus:
+          $ref: '#/components/schemas/ClientStatus'
+    UpstreamStatus:
       type: object
       properties:
         interface_up: { type: boolean }
@@ -72,7 +83,7 @@ components:
         transfer_rx_bytes: { type: integer, format: int64 }
         transfer_tx_bytes: { type: integer, format: int64 }
         last_error: { type: string }
-    EgressTunnel:
+    UpstreamTunnel:
       type: object
       properties:
         id: { type: integer }
@@ -82,7 +93,7 @@ components:
         enabled: { type: boolean }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
-        status: { $ref: '#/components/schemas/EgressTunnelStatus' }
+        status: { $ref: '#/components/schemas/UpstreamStatus' }
     IngressSettings:
       type: object
       properties:
@@ -156,7 +167,7 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
   /setup/wg-easy-import:
     post:
-      summary: Импорт wg-easy с AmneziaWG
+      summary: Импорт wg-easy с AmneziaWG (создаёт клиентов)
       requestBody:
         required: true
         content:
@@ -240,9 +251,9 @@ paths:
       responses:
         '200': { description: ok }
 
-  /peers:
+  /clients:
     get:
-      summary: Список пиров входа с runtime-статусом
+      summary: Список клиентов с runtime-статусом
       responses:
         '200':
           description: ok
@@ -250,9 +261,9 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/Peer' }
+                items: { $ref: '#/components/schemas/Client' }
     post:
-      summary: Создать пира
+      summary: Создать клиента
       requestBody:
         required: true
         content:
@@ -266,12 +277,12 @@ paths:
                 private_key: { type: string }
                 public_key: { type: string }
                 generate_psk: { type: boolean }
-                egress_type: { $ref: '#/components/schemas/EgressType' }
-                egress_tunnel_id: { type: integer, nullable: true }
+                upstream_type: { $ref: '#/components/schemas/UpstreamType' }
+                upstream_tunnel_id: { type: integer, nullable: true }
       responses:
         '201': { description: created }
 
-  /peers/{id}:
+  /clients/{id}:
     parameters:
       - in: path
         name: id
@@ -283,7 +294,7 @@ paths:
           description: ok
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Peer' }
+              schema: { $ref: '#/components/schemas/Client' }
     patch:
       requestBody:
         required: true
@@ -295,29 +306,29 @@ paths:
                 name: { type: string }
                 enabled: { type: boolean }
                 allowed_ips: { type: string }
-                egress_type: { $ref: '#/components/schemas/EgressType' }
-                egress_tunnel_id: { type: integer, nullable: true }
+                upstream_type: { $ref: '#/components/schemas/UpstreamType' }
+                upstream_tunnel_id: { type: integer, nullable: true }
       responses:
         '200': { description: ok }
     delete:
       responses:
         '204': { description: deleted }
 
-  /peers/{id}/config:
+  /clients/{id}/config:
     parameters:
       - in: path
         name: id
         required: true
         schema: { type: integer }
     get:
-      summary: Текстовый AmneziaWG `.conf`
+      summary: Текстовый AmneziaWG `.conf` для клиента
       responses:
         '200':
           description: ok
           content:
             text/plain: {}
 
-  /peers/{id}/qrcode:
+  /clients/{id}/qrcode:
     parameters:
       - in: path
         name: id
@@ -331,19 +342,20 @@ paths:
           content:
             image/png: {}
 
-  /peers/{id}/enable:
+  /clients/{id}/enable:
     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
     post:
       responses:
         '200': { description: ok }
-  /peers/{id}/disable:
+  /clients/{id}/disable:
     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
     post:
       responses:
         '200': { description: ok }
 
-  /egress-tunnels:
+  /upstreams:
     get:
+      summary: Список наших исходящих AWG-подключений
       responses:
         '200':
           description: ok
@@ -351,17 +363,17 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/EgressTunnel' }
+                items: { $ref: '#/components/schemas/UpstreamTunnel' }
     post:
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/EgressTunnel' }
+            schema: { $ref: '#/components/schemas/UpstreamTunnel' }
       responses:
         '201': { description: created }
 
-  /egress-tunnels/{id}:
+  /upstreams/{id}:
     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
     get:
       responses:
@@ -369,20 +381,20 @@ paths:
           description: ok
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/EgressTunnel' }
+              schema: { $ref: '#/components/schemas/UpstreamTunnel' }
     patch:
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/EgressTunnel' }
+            schema: { $ref: '#/components/schemas/UpstreamTunnel' }
       responses:
         '200': { description: ok }
     delete:
       responses:
         '204': { description: deleted }
         '409':
-          description: tunnel referenced by peers
+          description: upstream referenced by clients
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -394,7 +406,7 @@ paths:
         '200': { description: ok }
   /system/status:
     get:
-      summary: Сводный статус (handshake пиров, статусы туннелей, last_error)
+      summary: Сводный статус (handshake клиентов, статусы upstream-туннелей, last_error)
       responses:
         '200': { description: ok }
 

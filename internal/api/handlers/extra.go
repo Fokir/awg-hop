@@ -40,15 +40,15 @@ func (h *Handlers) SystemStatus(w http.ResponseWriter, r *http.Request) {
 				"interface_name": in.InterfaceName,
 				"listen_port":    in.ListenPort,
 			}
-			if peers, err := h.Net.IngressStatus(r.Context(), in.InterfaceName); err == nil {
-				ingress["peers"] = peers
+			if clients, err := h.Net.IngressStatus(r.Context(), in.InterfaceName); err == nil {
+				ingress["clients"] = clients
 			} else {
-				ingress["peers_error"] = err.Error()
+				ingress["clients_error"] = err.Error()
 			}
 			out["ingress"] = ingress
 		}
 
-		if list, err := h.Store.ListEgressTunnels(r.Context()); err == nil {
+		if list, err := h.Store.ListUpstreamTunnels(r.Context()); err == nil {
 			arr := make([]map[string]any, 0, len(list))
 			for _, t := range list {
 				row := map[string]any{
@@ -58,11 +58,11 @@ func (h *Handlers) SystemStatus(w http.ResponseWriter, r *http.Request) {
 					"enabled":        t.Enabled,
 				}
 				if t.Enabled {
-					row["status"] = h.Net.EgressStatus(r.Context(), t.InterfaceName)
+					row["status"] = h.Net.UpstreamStatus(r.Context(), t.InterfaceName)
 				}
 				arr = append(arr, row)
 			}
-			out["egress_tunnels"] = arr
+			out["upstreams"] = arr
 		}
 	}
 	respond.JSON(w, http.StatusOK, out)

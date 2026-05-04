@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// PeerRuleSource нормализует AllowedIPs пира до IPv4 /32 для ip rule from.
+// PeerRuleSource нормализует AllowedIPs клиента до IPv4 /32 для `ip rule from`.
 func PeerRuleSource(allowedIPs string) (cidr string, ok bool) {
 	s := strings.TrimSpace(allowedIPs)
 	if s == "" {

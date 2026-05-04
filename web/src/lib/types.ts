@@ -1,20 +1,20 @@
-export type EgressType = 'direct' | 'egress_awg';
+export type UpstreamType = 'direct' | 'via_upstream';
 
-export interface Peer {
+export interface Client {
   id: number;
   name: string;
   public_key: string;
   preshared_key?: string | null;
   allowed_ips: string;
   enabled: boolean;
-  egress_type: EgressType;
-  egress_tunnel_id?: number | null;
+  upstream_type: UpstreamType;
+  upstream_tunnel_id?: number | null;
   created_at: string;
   updated_at: string;
-  status?: PeerStatus | null;
+  status?: ClientStatus | null;
 }
 
-export interface PeerStatus {
+export interface ClientStatus {
   public_key: string;
   endpoint?: string;
   latest_handshake_unix: number;
@@ -23,7 +23,7 @@ export interface PeerStatus {
   persistent_keepalive?: number;
 }
 
-export interface EgressTunnel {
+export interface UpstreamTunnel {
   id: number;
   name: string;
   interface_name: string;
@@ -31,10 +31,10 @@ export interface EgressTunnel {
   enabled: boolean;
   created_at: string;
   updated_at: string;
-  status?: EgressTunnelStatus | null;
+  status?: UpstreamStatus | null;
 }
 
-export interface EgressTunnelStatus {
+export interface UpstreamStatus {
   interface_up: boolean;
   latest_handshake_unix: number;
   transfer_rx_bytes: number;
@@ -83,14 +83,14 @@ export interface SystemStatus {
   ingress?: {
     interface_name: string;
     listen_port: number;
-    peers?: Record<string, PeerStatus>;
-    peers_error?: string;
+    clients?: Record<string, ClientStatus>;
+    clients_error?: string;
   };
-  egress_tunnels?: Array<{
+  upstreams?: Array<{
     id: number;
     name: string;
     interface_name: string;
     enabled: boolean;
-    status?: EgressTunnelStatus;
+    status?: UpstreamStatus;
   }>;
 }

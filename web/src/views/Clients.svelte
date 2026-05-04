@@ -2,22 +2,22 @@
   import { onMount } from 'svelte';
   import { api, ApiError } from '../lib/api';
   import { formatBytes, formatHandshake, isFreshHandshake } from '../lib/format';
-  import type { Peer, EgressTunnel } from '../lib/types';
+  import type { Client, UpstreamTunnel, UpstreamType } from '../lib/types';
 
-  let peers = $state<Peer[]>([]);
-  let tunnels = $state<EgressTunnel[]>([]);
+  let clients = $state<Client[]>([]);
+  let upstreams = $state<UpstreamTunnel[]>([]);
   let error = $state<string | null>(null);
 
   let showForm = $state(false);
-  let editing = $state<Peer | null>(null);
+  let editing = $state<Client | null>(null);
 
   let formName = $state('');
   let formAllowedIps = $state('');
   let formPrivateKey = $state('');
   let formPublicKey = $state('');
   let formGeneratePsk = $state(false);
-  let formEgressType = $state<'direct' | 'egress_awg'>('direct');
-  let formEgressTunnelId = $state<number | ''>('');
+  let formUpstreamType = $state<UpstreamType>('direct');
+  let formUpstreamTunnelId = $state<number | ''>('');
   let formEnabled = $state(true);
 
   onMount(refresh);
@@ -32,9 +32,9 @@
 
   async function refresh() {
     try {
-      [peers, tunnels] = await Promise.all([
-        api<Peer[]>('/api/v1/peers'),
-        api<EgressTunnel[]>('/api/v1/egress-tunnels'),
+      [clients, upstreams] = await Promise.all([
+        api<Client[]>('/api/v1/clients'),
+        api<UpstreamTunnel[]>('/api/v1/upstreams'),
       ]);
       error = null;
     } catch (e) {
@@ -49,22 +49,22 @@
     formPrivateKey = '';
     formPublicKey = '';
     formGeneratePsk = false;
-    formEgressType = 'direct';
-    formEgressTunnelId = '';
+    formUpstreamType = 'direct';
+    formUpstreamTunnelId = '';
     formEnabled = true;
     showForm = true;
   }
 
-  function openEdit(p: Peer) {
-    editing = p;
-    formName = p.name;
-    formAllowedIps = p.allowed_ips;
+  function openEdit(c: Client) {
+    editing = c;
+    formName = c.name;
+    formAllowedIps = c.allowed_ips;
     formPrivateKey = '';
-    formPublicKey = p.public_key;
+    formPublicKey = c.public_key;
     formGeneratePsk = false;
-    formEgressType = p.egress_type;
-    formEgressTunnelId = p.egress_tunnel_id ?? '';
-    formEnabled = p.enabled;
+    formUpstreamType = c.upstream_type;
+    formUpstreamTunnelId = c.upstream_tunnel_id ?? '';
+    formEnabled = c.enabled;
     showForm = true;
   }
 
@@ -76,10 +76,10 @@
           name: formName,
           allowed_ips: formAllowedIps,
           enabled: formEnabled,
-          egress_type: formEgressType,
-          egress_tunnel_id: formEgressType === 'egress_awg' ? Number(formEgressTunnelId) : null,
+          upstream_type: formUpstreamType,
+          upstream_tunnel_id: formUpstreamType === 'via_upstream' ? Number(formUpstreamTunnelId) : null,
         };
-        await api(`/api/v1/peers/${editing.id}`, { method: 'PATCH', body });
+        await api(`/api/v1/clients/${editing.id}`, { method: 'PATCH', body });
       } else {
         const body: Record<string, unknown> = {
           name: formName,
@@ -87,10 +87,10 @@
           private_key: formPrivateKey || undefined,
           public_key: formPublicKey || undefined,
           generate_psk: formGeneratePsk,
-          egress_type: formEgressType,
-          egress_tunnel_id: formEgressType === 'egress_awg' ? Number(formEgressTunnelId) : undefined,
+          upstream_type: formUpstreamType,
+          upstream_tunnel_id: formUpstreamType === 'via_upstream' ? Number(formUpstreamTunnelId) : undefined,
         };
-        await api('/api/v1/peers', { body });
+        await api('/api/v1/clients', { body });
       }
       showForm = false;
       await refresh();
@@ -99,35 +99,35 @@
     }
   }
 
-  async function toggle(p: Peer) {
+  async function toggle(c: Client) {
     try {
-      await api(`/api/v1/peers/${p.id}/${p.enabled ? 'disable' : 'enable'}`, { method: 'POST' });
+      await api(`/api/v1/clients/${c.id}/${c.enabled ? 'disable' : 'enable'}`, { method: 'POST' });
       await refresh();
     } catch (e) {
       error = e instanceof ApiError ? e.message : String(e);
     }
   }
 
-  async function remove(p: Peer) {
-    if (!window.confirm(`Удалить пира ${p.name}?`)) return;
+  async function remove(c: Client) {
+    if (!window.confirm(`Удалить клиента ${c.name}?`)) return;
     try {
-      await api(`/api/v1/peers/${p.id}`, { method: 'DELETE' });
+      await api(`/api/v1/clients/${c.id}`, { method: 'DELETE' });
       await refresh();
     } catch (e) {
       error = e instanceof ApiError ? e.message : String(e);
     }
   }
 
-  function tunnelName(id: number | null | undefined) {
+  function upstreamName(id: number | null | undefined) {
     if (!id) return '';
-    return tunnels.find((t) => t.id === id)?.name ?? `#${id}`;
+    return upstreams.find((t) => t.id === id)?.name ?? `#${id}`;
   }
 </script>
 
 <section>
   <header class="row">
-    <h2>Пиры входа (AmneziaWG)</h2>
-    <button type="button" onclick={openCreate}>+ Новый пир</button>
+    <h2>Клиенты</h2>
+    <button type="button" onclick={openCreate}>+ Новый клиент</button>
   </header>
   {#if error}<p class="err">{error}</p>{/if}
 
@@ -136,7 +136,7 @@
       <tr>
         <th>Имя</th>
         <th>Адрес</th>
-        <th>Egress</th>
+        <th>Маршрут</th>
         <th>Handshake</th>
         <th>RX / TX</th>
         <th>Статус</th>
@@ -144,48 +144,48 @@
       </tr>
     </thead>
     <tbody>
-      {#each peers as p (p.id)}
-        <tr class:disabled={!p.enabled}>
-          <td>{p.name}</td>
-          <td><code>{p.allowed_ips}</code></td>
+      {#each clients as c (c.id)}
+        <tr class:disabled={!c.enabled}>
+          <td>{c.name}</td>
+          <td><code>{c.allowed_ips}</code></td>
           <td>
-            {#if p.egress_type === 'direct'}
-              <span class="badge direct">direct</span>
+            {#if c.upstream_type === 'direct'}
+              <span class="badge direct">прямой выход</span>
             {:else}
-              <span class="badge tunnel">→ {tunnelName(p.egress_tunnel_id)}</span>
+              <span class="badge tunnel">→ {upstreamName(c.upstream_tunnel_id)}</span>
             {/if}
           </td>
           <td>
-            {#if p.status?.latest_handshake_unix}
-              <span class:fresh={isFreshHandshake(p.status.latest_handshake_unix)}>
-                {formatHandshake(p.status.latest_handshake_unix)}
+            {#if c.status?.latest_handshake_unix}
+              <span class:fresh={isFreshHandshake(c.status.latest_handshake_unix)}>
+                {formatHandshake(c.status.latest_handshake_unix)}
               </span>
             {:else}
               <span class="muted">—</span>
             {/if}
           </td>
           <td>
-            {#if p.status}
-              <small>{formatBytes(p.status.transfer_rx_bytes)} / {formatBytes(p.status.transfer_tx_bytes)}</small>
+            {#if c.status}
+              <small>{formatBytes(c.status.transfer_rx_bytes)} / {formatBytes(c.status.transfer_tx_bytes)}</small>
             {:else}
               <span class="muted">—</span>
             {/if}
           </td>
           <td>
-            <button type="button" class="link" onclick={() => toggle(p)}>
-              {p.enabled ? 'выкл' : 'вкл'}
+            <button type="button" class="link" onclick={() => toggle(c)}>
+              {c.enabled ? 'выкл' : 'вкл'}
             </button>
           </td>
           <td class="actions">
-            <a href={`/api/v1/peers/${p.id}/config`}>conf</a>
-            <a href={`/api/v1/peers/${p.id}/qrcode`} target="_blank" rel="noreferrer">QR</a>
-            <button type="button" class="link" onclick={() => openEdit(p)}>править</button>
-            <button type="button" class="link danger" onclick={() => remove(p)}>удалить</button>
+            <a href={`/api/v1/clients/${c.id}/config`}>conf</a>
+            <a href={`/api/v1/clients/${c.id}/qrcode`} target="_blank" rel="noreferrer">QR</a>
+            <button type="button" class="link" onclick={() => openEdit(c)}>править</button>
+            <button type="button" class="link danger" onclick={() => remove(c)}>удалить</button>
           </td>
         </tr>
       {/each}
-      {#if peers.length === 0}
-        <tr><td colspan="7" class="muted center">Пиров пока нет.</td></tr>
+      {#if clients.length === 0}
+        <tr><td colspan="7" class="muted center">Клиентов пока нет.</td></tr>
       {/if}
     </tbody>
   </table>
@@ -206,7 +206,7 @@
       aria-modal="true"
       tabindex="-1"
     >
-      <h3>{editing ? `Пир «${editing.name}»` : 'Новый пир'}</h3>
+      <h3>{editing ? `Клиент «${editing.name}»` : 'Новый клиент'}</h3>
       <form
         onsubmit={(e) => {
           e.preventDefault();
@@ -236,19 +236,19 @@
         {/if}
 
         <fieldset>
-          <legend>Egress</legend>
+          <legend>Куда направить трафик</legend>
           <label class="row">
-            <input type="radio" bind:group={formEgressType} value="direct" />
-            Прямой выход в интернет (NAT контейнера)
+            <input type="radio" bind:group={formUpstreamType} value="direct" />
+            Прямой выход в интернет (NAT внешнего интерфейса)
           </label>
           <label class="row">
-            <input type="radio" bind:group={formEgressType} value="egress_awg" />
-            Через исходящий AWG-туннель
+            <input type="radio" bind:group={formUpstreamType} value="via_upstream" />
+            Через одно из upstream-подключений (наш сервер как AWG-клиент)
           </label>
-          {#if formEgressType === 'egress_awg'}
-            <select bind:value={formEgressTunnelId} required>
-              <option value="" disabled>— выберите туннель —</option>
-              {#each tunnels as t}
+          {#if formUpstreamType === 'via_upstream'}
+            <select bind:value={formUpstreamTunnelId} required>
+              <option value="" disabled>— выберите upstream —</option>
+              {#each upstreams as t}
                 <option value={t.id} disabled={!t.enabled}>{t.name} ({t.interface_name})</option>
               {/each}
             </select>

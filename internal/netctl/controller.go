@@ -97,12 +97,12 @@ func (c *Controller) Apply(ctx context.Context, st *store.Store) error {
 		}
 	}
 
-	tunnels, err := st.ListEgressTunnels(ctx)
+	upstreams, err := st.ListUpstreamTunnels(ctx)
 	if err != nil {
 		c.setErr(err)
 		return err
 	}
-	peers, err := st.ListPeers(ctx)
+	clients, err := st.ListClients(ctx)
 	if err != nil {
 		c.setErr(err)
 		return err
@@ -115,16 +115,16 @@ func (c *Controller) Apply(ctx context.Context, st *store.Store) error {
 
 	extIface, err := c.detectExternalInterface(ctx, sys.ExternalInterface)
 	if err != nil {
-		c.Log.Warn("nat: external interface detection failed; direct peers won't get NAT", "err", err)
+		c.Log.Warn("nat: external interface detection failed; direct clients won't get NAT", "err", err)
 	}
 
 	var next PolicyState
 	next.Version = 1
 	var natRules []NATRule
 
-	tunnelByID := make(map[int64]domain.EgressTunnel)
-	for _, t := range tunnels {
-		tunnelByID[t.ID] = t
+	upstreamByID := make(map[int64]domain.UpstreamTunnel)
+	for _, t := range upstreams {
+		upstreamByID[t.ID] = t
 		if !t.Enabled {
 			continue
 		}
@@ -136,38 +136,38 @@ func (c *Controller) Apply(ctx context.Context, st *store.Store) error {
 		next.Routes = append(next.Routes, RouteEntry{Table: tbl, Dev: t.InterfaceName})
 	}
 
-	for _, p := range peers {
-		if !p.Enabled {
+	for _, cl := range clients {
+		if !cl.Enabled {
 			continue
 		}
-		from, ok := PeerRuleSource(p.AllowedIPs)
+		from, ok := PeerRuleSource(cl.AllowedIPs)
 		if !ok {
-			c.Log.Warn("netctl: skip peer with invalid allowed_ips", "peer_id", p.ID, "allowed_ips", p.AllowedIPs)
+			c.Log.Warn("netctl: skip client with invalid allowed_ips", "client_id", cl.ID, "allowed_ips", cl.AllowedIPs)
 			continue
 		}
 
-		switch p.EgressType {
-		case domain.EgressDirect:
+		switch cl.UpstreamType {
+		case domain.UpstreamDirect:
 			if extIface != "" {
 				natRules = append(natRules, makeMasqueradeRule(from, extIface))
 			}
-		case domain.EgressViaTunnel:
-			if p.EgressTunnelID == nil {
+		case domain.UpstreamViaTunnel:
+			if cl.UpstreamTunnelID == nil {
 				continue
 			}
-			tid := *p.EgressTunnelID
-			tun, ok := tunnelByID[tid]
+			tid := *cl.UpstreamTunnelID
+			tun, ok := upstreamByID[tid]
 			if !ok || !tun.Enabled {
 				if sys.TunnelOfflinePolicy == domain.TunnelOfflineBlock {
-					err := fmt.Errorf("peer %d references unavailable tunnel %d (policy=block)", p.ID, tid)
+					err := fmt.Errorf("client %d references unavailable upstream tunnel %d (policy=block)", cl.ID, tid)
 					c.setErr(err)
 					return err
 				}
-				c.Log.Warn("netctl: skip peer (tunnel offline, policy=ignore)", "peer_id", p.ID, "tunnel_id", tid)
+				c.Log.Warn("netctl: skip client (upstream offline, policy=ignore)", "client_id", cl.ID, "upstream_id", tid)
 				continue
 			}
 			tbl := domain.RoutingTableID(tid)
-			pref := domain.RulePreference(p.ID)
+			pref := domain.RulePreference(cl.ID)
 			if _, err := c.Runner.Run(ctx, c.IPBin, "rule", "add", "from", from, "table", strconv.Itoa(tbl), "pref", strconv.Itoa(pref)); err != nil {
 				c.setErr(err)
 				return err
@@ -246,8 +246,8 @@ func (c *Controller) saveState(s *PolicyState) error {
 	return os.WriteFile(c.StatePath, b, 0o600)
 }
 
-// IngressStatus возвращает рантайм-данные пиров (handshake, rx, tx) по public_key.
-func (c *Controller) IngressStatus(ctx context.Context, ifaceName string) (map[string]domain.PeerStatus, error) {
+// IngressStatus возвращает runtime-данные клиентов на входном AWG-интерфейсе по public_key.
+func (c *Controller) IngressStatus(ctx context.Context, ifaceName string) (map[string]domain.ClientStatus, error) {
 	if runtime.GOOS != "linux" || ifaceName == "" {
 		return nil, nil
 	}
@@ -255,9 +255,9 @@ func (c *Controller) IngressStatus(ctx context.Context, ifaceName string) (map[s
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]domain.PeerStatus, len(dump.Peers))
+	out := make(map[string]domain.ClientStatus, len(dump.Peers))
 	for _, p := range dump.Peers {
-		out[p.PublicKey] = domain.PeerStatus{
+		out[p.PublicKey] = domain.ClientStatus{
 			PublicKey:         p.PublicKey,
 			Endpoint:          p.Endpoint,
 			LatestHandshake:   p.LatestHandshake,
@@ -269,9 +269,9 @@ func (c *Controller) IngressStatus(ctx context.Context, ifaceName string) (map[s
 	return out, nil
 }
 
-// EgressStatus агрегирует первый peer (это удалённый сервер) для каждого исходящего туннеля.
-func (c *Controller) EgressStatus(ctx context.Context, ifaceName string) domain.EgressTunnelStatus {
-	st := domain.EgressTunnelStatus{}
+// UpstreamStatus собирает первый peer (удалённый AWG-сервер) для каждого upstream-туннеля.
+func (c *Controller) UpstreamStatus(ctx context.Context, ifaceName string) domain.UpstreamStatus {
+	st := domain.UpstreamStatus{}
 	if runtime.GOOS != "linux" || ifaceName == "" {
 		return st
 	}

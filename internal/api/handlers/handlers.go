@@ -264,26 +264,26 @@ func (h *Handlers) PutIngress(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, out)
 }
 
-// peerView сериализует пира вместе с runtime-статусом, если он доступен.
-type peerView struct {
-	domain.Peer
-	Status *domain.PeerStatus `json:"status,omitempty"`
+// clientView сериализует клиента вместе с runtime-статусом, если он доступен.
+type clientView struct {
+	domain.Client
+	Status *domain.ClientStatus `json:"status,omitempty"`
 }
 
-func (h *Handlers) ListPeers(w http.ResponseWriter, r *http.Request) {
-	list, err := h.Store.ListPeers(r.Context())
+func (h *Handlers) ListClients(w http.ResponseWriter, r *http.Request) {
+	list, err := h.Store.ListClients(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
 
-	statusMap, _ := h.peerStatusMap(r.Context())
+	statusMap, _ := h.clientStatusMap(r.Context())
 
-	out := make([]peerView, 0, len(list))
-	for _, p := range list {
-		p.PrivateKey = ""
-		v := peerView{Peer: p}
-		if s, ok := statusMap[strings.TrimSpace(p.PublicKey)]; ok {
+	out := make([]clientView, 0, len(list))
+	for _, c := range list {
+		c.PrivateKey = ""
+		v := clientView{Client: c}
+		if s, ok := statusMap[strings.TrimSpace(c.PublicKey)]; ok {
 			s := s
 			v.Status = &s
 		}
@@ -292,7 +292,7 @@ func (h *Handlers) ListPeers(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, out)
 }
 
-func (h *Handlers) peerStatusMap(ctx context.Context) (map[string]domain.PeerStatus, error) {
+func (h *Handlers) clientStatusMap(ctx context.Context) (map[string]domain.ClientStatus, error) {
 	if h.Net == nil {
 		return nil, nil
 	}
@@ -303,18 +303,18 @@ func (h *Handlers) peerStatusMap(ctx context.Context) (map[string]domain.PeerSta
 	return h.Net.IngressStatus(ctx, in.InterfaceName)
 }
 
-type createPeerBody struct {
+type createClientBody struct {
 	Name             string `json:"name"`
 	AllowedIPs       string `json:"allowed_ips"`
 	PrivateKey       string `json:"private_key"`
 	PublicKey        string `json:"public_key"`
 	GeneratePSK      bool   `json:"generate_psk"`
-	EgressType       string `json:"egress_type"`
-	EgressTunnelID   *int64 `json:"egress_tunnel_id"`
+	UpstreamType     string `json:"upstream_type"`
+	UpstreamTunnelID *int64 `json:"upstream_tunnel_id"`
 }
 
-func (h *Handlers) CreatePeer(w http.ResponseWriter, r *http.Request) {
-	var body createPeerBody
+func (h *Handlers) CreateClient(w http.ResponseWriter, r *http.Request) {
+	var body createClientBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_json", err.Error())
 		return
@@ -324,11 +324,11 @@ func (h *Handlers) CreatePeer(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusBadRequest, "validation", "name is required")
 		return
 	}
-	et := domain.EgressType(body.EgressType)
-	if body.EgressType == "" {
-		et = domain.EgressDirect
+	ut := domain.UpstreamType(body.UpstreamType)
+	if body.UpstreamType == "" {
+		ut = domain.UpstreamDirect
 	}
-	outTid, verr := h.resolveEgressSpec(r.Context(), et, body.EgressTunnelID)
+	outTid, verr := h.resolveUpstreamSpec(r.Context(), ut, body.UpstreamTunnelID)
 	if verr != nil {
 		respond.Error(w, http.StatusBadRequest, "validation", verr.Error())
 		return
@@ -364,7 +364,7 @@ func (h *Handlers) CreatePeer(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	used, err := h.Store.ListPeerAllowedIPs(r.Context())
+	used, err := h.Store.ListClientAllowedIPs(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
@@ -389,22 +389,22 @@ func (h *Handlers) CreatePeer(w http.ResponseWriter, r *http.Request) {
 		psk = &s
 	}
 
-	p := domain.Peer{
-		Name:           body.Name,
-		PrivateKey:     priv,
-		PublicKey:      pub,
-		PresharedKey:   psk,
-		AllowedIPs:     allowed,
-		Enabled:        true,
-		EgressType:     et,
-		EgressTunnelID: outTid,
+	c := domain.Client{
+		Name:             body.Name,
+		PrivateKey:       priv,
+		PublicKey:        pub,
+		PresharedKey:     psk,
+		AllowedIPs:       allowed,
+		Enabled:          true,
+		UpstreamType:     ut,
+		UpstreamTunnelID: outTid,
 	}
-	id, err := h.Store.InsertPeer(r.Context(), p)
+	id, err := h.Store.InsertClient(r.Context(), c)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "insert", err.Error())
 		return
 	}
-	out, err := h.Store.GetPeer(r.Context(), id)
+	out, err := h.Store.GetClient(r.Context(), id)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "reload", err.Error())
 		return
@@ -413,13 +413,13 @@ func (h *Handlers) CreatePeer(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusCreated, out)
 }
 
-func (h *Handlers) GetPeer(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) GetClient(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_id", "")
 		return
 	}
-	p, err := h.Store.GetPeer(r.Context(), id)
+	c, err := h.Store.GetClient(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			respond.Error(w, http.StatusNotFound, "not_found", "")
@@ -428,25 +428,25 @@ func (h *Handlers) GetPeer(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	p.PrivateKey = ""
-	respond.JSON(w, http.StatusOK, p)
+	c.PrivateKey = ""
+	respond.JSON(w, http.StatusOK, c)
 }
 
-type patchPeerBody struct {
-	Name           *string `json:"name"`
-	Enabled        *bool   `json:"enabled"`
-	AllowedIPs     *string `json:"allowed_ips"`
-	EgressType     *string `json:"egress_type"`
-	EgressTunnelID *int64  `json:"egress_tunnel_id"`
+type patchClientBody struct {
+	Name             *string `json:"name"`
+	Enabled          *bool   `json:"enabled"`
+	AllowedIPs       *string `json:"allowed_ips"`
+	UpstreamType     *string `json:"upstream_type"`
+	UpstreamTunnelID *int64  `json:"upstream_tunnel_id"`
 }
 
-func (h *Handlers) PatchPeer(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) PatchClient(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_id", "")
 		return
 	}
-	p, err := h.Store.GetPeer(r.Context(), id)
+	c, err := h.Store.GetClient(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			respond.Error(w, http.StatusNotFound, "not_found", "")
@@ -455,60 +455,60 @@ func (h *Handlers) PatchPeer(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	var body patchPeerBody
+	var body patchClientBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_json", err.Error())
 		return
 	}
 	if body.Name != nil {
-		p.Name = strings.TrimSpace(*body.Name)
+		c.Name = strings.TrimSpace(*body.Name)
 	}
 	if body.Enabled != nil {
-		p.Enabled = *body.Enabled
+		c.Enabled = *body.Enabled
 	}
 	if body.AllowedIPs != nil {
-		p.AllowedIPs = *body.AllowedIPs
+		c.AllowedIPs = *body.AllowedIPs
 	}
-	et := p.EgressType
-	if body.EgressType != nil {
-		et = domain.EgressType(*body.EgressType)
+	ut := c.UpstreamType
+	if body.UpstreamType != nil {
+		ut = domain.UpstreamType(*body.UpstreamType)
 	}
-	tid := p.EgressTunnelID
-	if body.EgressTunnelID != nil {
-		tid = body.EgressTunnelID
+	tid := c.UpstreamTunnelID
+	if body.UpstreamTunnelID != nil {
+		tid = body.UpstreamTunnelID
 	}
-	if et == domain.EgressDirect {
+	if ut == domain.UpstreamDirect {
 		tid = nil
 	}
-	outTid, verr := h.resolveEgressSpec(r.Context(), et, tid)
+	outTid, verr := h.resolveUpstreamSpec(r.Context(), ut, tid)
 	if verr != nil {
 		respond.Error(w, http.StatusBadRequest, "validation", verr.Error())
 		return
 	}
-	p.EgressType = et
-	p.EgressTunnelID = outTid
-	if err := h.Store.UpdatePeer(r.Context(), p); err != nil {
+	c.UpstreamType = ut
+	c.UpstreamTunnelID = outTid
+	if err := h.Store.UpdateClient(r.Context(), c); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "update", err.Error())
 		return
 	}
-	p.PrivateKey = ""
-	respond.JSON(w, http.StatusOK, p)
+	c.PrivateKey = ""
+	respond.JSON(w, http.StatusOK, c)
 }
 
-func (h *Handlers) DeletePeer(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) DeleteClient(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_id", "")
 		return
 	}
-	if err := h.Store.DeletePeer(r.Context(), id); err != nil {
+	if err := h.Store.DeleteClient(r.Context(), id); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "delete", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handlers) buildClientConfig(ctx context.Context, p domain.Peer) (string, error) {
+func (h *Handlers) buildClientConfig(ctx context.Context, c domain.Client) (string, error) {
 	in, err := h.Store.GetIngressSettings(ctx)
 	if err != nil {
 		return "", err
@@ -517,16 +517,16 @@ func (h *Handlers) buildClientConfig(ctx context.Context, p domain.Peer) (string
 	if err != nil {
 		return "", err
 	}
-	return amnezia.BuildClientConf(p, in, sys), nil
+	return amnezia.BuildClientConf(c, in, sys), nil
 }
 
-func (h *Handlers) PeerConfig(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) ClientConfig(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_id", "")
 		return
 	}
-	p, err := h.Store.GetPeer(r.Context(), id)
+	c, err := h.Store.GetClient(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			respond.Error(w, http.StatusNotFound, "not_found", "")
@@ -535,23 +535,23 @@ func (h *Handlers) PeerConfig(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	conf, err := h.buildClientConfig(r.Context(), p)
+	conf, err := h.buildClientConfig(r.Context(), c)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="awghop-peer-`+strconv.FormatInt(id, 10)+`.conf"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="awghop-client-`+strconv.FormatInt(id, 10)+`.conf"`)
 	_, _ = w.Write([]byte(conf))
 }
 
-func (h *Handlers) PeerQR(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) ClientQR(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_id", "")
 		return
 	}
-	p, err := h.Store.GetPeer(r.Context(), id)
+	c, err := h.Store.GetClient(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			respond.Error(w, http.StatusNotFound, "not_found", "")
@@ -560,7 +560,7 @@ func (h *Handlers) PeerQR(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	conf, err := h.buildClientConfig(r.Context(), p)
+	conf, err := h.buildClientConfig(r.Context(), c)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
@@ -574,21 +574,21 @@ func (h *Handlers) PeerQR(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(png)
 }
 
-func (h *Handlers) EnablePeer(w http.ResponseWriter, r *http.Request) {
-	h.setPeerEnabled(w, r, true)
+func (h *Handlers) EnableClient(w http.ResponseWriter, r *http.Request) {
+	h.setClientEnabled(w, r, true)
 }
 
-func (h *Handlers) DisablePeer(w http.ResponseWriter, r *http.Request) {
-	h.setPeerEnabled(w, r, false)
+func (h *Handlers) DisableClient(w http.ResponseWriter, r *http.Request) {
+	h.setClientEnabled(w, r, false)
 }
 
-func (h *Handlers) setPeerEnabled(w http.ResponseWriter, r *http.Request, en bool) {
+func (h *Handlers) setClientEnabled(w http.ResponseWriter, r *http.Request, en bool) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_id", "")
 		return
 	}
-	p, err := h.Store.GetPeer(r.Context(), id)
+	c, err := h.Store.GetClient(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			respond.Error(w, http.StatusNotFound, "not_found", "")
@@ -597,11 +597,11 @@ func (h *Handlers) setPeerEnabled(w http.ResponseWriter, r *http.Request, en boo
 		respond.Error(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	p.Enabled = en
-	if err := h.Store.UpdatePeer(r.Context(), p); err != nil {
+	c.Enabled = en
+	if err := h.Store.UpdateClient(r.Context(), c); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "update", err.Error())
 		return
 	}
-	p.PrivateKey = ""
-	respond.JSON(w, http.StatusOK, p)
+	c.PrivateKey = ""
+	respond.JSON(w, http.StatusOK, c)
 }

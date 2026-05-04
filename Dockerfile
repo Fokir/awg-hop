@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1.7
 
-# Версии apстрима AmneziaWG, известные совместимые с этим релизом AWG Hop.
-# Если нужно обновиться — поднимите эти переменные сборки осознанно и протестируйте.
-ARG AWG_TOOLS_REF=v1.0.20240705
-ARG AWG_GO_REF=v0.2.12
+# Версии апстрима AmneziaWG. По умолчанию собираемся из master, что всегда
+# работает; для воспроизводимых релизов передайте конкретный ref (тег или sha)
+# через --build-arg AWG_TOOLS_REF=... / AWG_GO_REF=....
+ARG AWG_TOOLS_REF=master
+ARG AWG_GO_REF=master
 
 # UI -> internal/ui/dist
 FROM node:22-bookworm AS frontend
@@ -19,9 +20,8 @@ ARG AWG_GO_REF
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
-RUN git clone https://github.com/amnezia-vpn/amneziawg-go.git \
+RUN git clone --depth 1 --branch "$AWG_GO_REF" https://github.com/amnezia-vpn/amneziawg-go.git \
   && cd amneziawg-go \
-  && git -c advice.detachedHead=false checkout "$AWG_GO_REF" \
   && make \
   && make install DESTDIR=/staging PREFIX=/usr
 
@@ -32,10 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git make gcc libc6-dev bash ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
-RUN git clone https://github.com/amnezia-vpn/amneziawg-tools.git \
-  && cd amneziawg-tools \
-  && git -c advice.detachedHead=false checkout "$AWG_TOOLS_REF" \
-  && cd src \
+RUN git clone --depth 1 --branch "$AWG_TOOLS_REF" https://github.com/amnezia-vpn/amneziawg-tools.git \
+  && cd amneziawg-tools/src \
   && make -j"$(nproc)" \
   && make install DESTDIR=/staging WITH_WGQUICK=yes
 

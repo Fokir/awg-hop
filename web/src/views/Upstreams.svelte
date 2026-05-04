@@ -2,13 +2,13 @@
   import { onMount } from 'svelte';
   import { api, ApiError } from '../lib/api';
   import { formatBytes, formatHandshake, isFreshHandshake } from '../lib/format';
-  import type { EgressTunnel } from '../lib/types';
+  import type { UpstreamTunnel } from '../lib/types';
 
-  let tunnels = $state<EgressTunnel[]>([]);
+  let upstreams = $state<UpstreamTunnel[]>([]);
   let error = $state<string | null>(null);
 
   let showForm = $state(false);
-  let editing = $state<EgressTunnel | null>(null);
+  let editing = $state<UpstreamTunnel | null>(null);
 
   let formName = $state('');
   let formInterface = $state('awg1');
@@ -19,7 +19,7 @@
 
   async function refresh() {
     try {
-      tunnels = await api<EgressTunnel[]>('/api/v1/egress-tunnels');
+      upstreams = await api<UpstreamTunnel[]>('/api/v1/upstreams');
       error = null;
     } catch (e) {
       error = e instanceof ApiError ? e.message : String(e);
@@ -36,7 +36,7 @@
     showForm = true;
   }
 
-  function openEdit(t: EgressTunnel) {
+  function openEdit(t: UpstreamTunnel) {
     editing = t;
     formName = t.name;
     formInterface = t.interface_name;
@@ -55,9 +55,9 @@
         enabled: formEnabled,
       };
       if (editing) {
-        await api(`/api/v1/egress-tunnels/${editing.id}`, { method: 'PATCH', body });
+        await api(`/api/v1/upstreams/${editing.id}`, { method: 'PATCH', body });
       } else {
-        await api('/api/v1/egress-tunnels', { body });
+        await api('/api/v1/upstreams', { body });
       }
       showForm = false;
       await refresh();
@@ -66,10 +66,10 @@
     }
   }
 
-  async function remove(t: EgressTunnel) {
-    if (!window.confirm(`Удалить туннель ${t.name}?`)) return;
+  async function remove(t: UpstreamTunnel) {
+    if (!window.confirm(`Удалить upstream ${t.name}?`)) return;
     try {
-      await api(`/api/v1/egress-tunnels/${t.id}`, { method: 'DELETE' });
+      await api(`/api/v1/upstreams/${t.id}`, { method: 'DELETE' });
       await refresh();
     } catch (e) {
       error = e instanceof ApiError ? `${e.code}: ${e.message}` : String(e);
@@ -79,8 +79,14 @@
 
 <section>
   <header class="row">
-    <h2>Исходящие AWG-туннели</h2>
-    <button type="button" onclick={openCreate}>+ Новый туннель</button>
+    <div>
+      <h2>Исходящие подключения (upstream)</h2>
+      <p class="hint">
+        Наш сервер выступает <strong>AWG-клиентом</strong> для удалённого AWG-сервера.
+        Клиенты с типом <em>«через upstream»</em> получают выход в интернет через выбранный канал.
+      </p>
+    </div>
+    <button type="button" onclick={openCreate}>+ Новый upstream</button>
   </header>
   {#if error}<p class="err">{error}</p>{/if}
 
@@ -96,7 +102,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each tunnels as t (t.id)}
+      {#each upstreams as t (t.id)}
         <tr class:disabled={!t.enabled}>
           <td>{t.name}</td>
           <td><code>{t.interface_name}</code></td>
@@ -125,8 +131,8 @@
           </td>
         </tr>
       {/each}
-      {#if tunnels.length === 0}
-        <tr><td colspan="6" class="muted center">Туннелей пока нет.</td></tr>
+      {#if upstreams.length === 0}
+        <tr><td colspan="6" class="muted center">Upstream-подключений пока нет.</td></tr>
       {/if}
     </tbody>
   </table>
@@ -147,7 +153,7 @@
       aria-modal="true"
       tabindex="-1"
     >
-      <h3>{editing ? `Туннель «${editing.name}»` : 'Новый туннель'}</h3>
+      <h3>{editing ? `Upstream «${editing.name}»` : 'Новый upstream'}</h3>
       <form
         onsubmit={(e) => {
           e.preventDefault();
@@ -183,9 +189,19 @@
   }
   header.row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
+    gap: 1rem;
     margin-bottom: 1rem;
+  }
+  header h2 {
+    margin: 0 0 0.25rem 0;
+  }
+  header .hint {
+    margin: 0;
+    color: #6b7280;
+    font-size: 0.85rem;
+    max-width: 60ch;
   }
   table {
     width: 100%;

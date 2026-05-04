@@ -11,7 +11,7 @@ import (
 //
 // allowedIPs формируется из system-настроек (по умолчанию IPv4-only `0.0.0.0/0`).
 // ServerPublicKey берётся из IngressSettings.
-func BuildClientConf(peer domain.Peer, s domain.IngressSettings, sys domain.SystemSettings) string {
+func BuildClientConf(c domain.Client, s domain.IngressSettings, sys domain.SystemSettings) string {
 	endpoint := strings.TrimSpace(s.HostEndpoint)
 	if endpoint == "" {
 		endpoint = fmt.Sprintf("127.0.0.1:%d", s.ListenPort)
@@ -24,8 +24,8 @@ func BuildClientConf(peer domain.Peer, s domain.IngressSettings, sys domain.Syst
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "[Interface]\n")
-	fmt.Fprintf(&b, "PrivateKey = %s\n", peer.PrivateKey)
-	fmt.Fprintf(&b, "Address = %s\n", peer.AllowedIPs)
+	fmt.Fprintf(&b, "PrivateKey = %s\n", c.PrivateKey)
+	fmt.Fprintf(&b, "Address = %s\n", c.AllowedIPs)
 	if strings.TrimSpace(s.DNSServers) != "" {
 		fmt.Fprintf(&b, "DNS = %s\n", s.DNSServers)
 	}
@@ -59,8 +59,8 @@ func BuildClientConf(peer domain.Peer, s domain.IngressSettings, sys domain.Syst
 		fmt.Fprintf(&b, "AllowedIPs = %s\n", allowedV4)
 	}
 	fmt.Fprintf(&b, "PersistentKeepalive = 25\n")
-	if peer.PresharedKey != nil && *peer.PresharedKey != "" {
-		fmt.Fprintf(&b, "PresharedKey = %s\n", *peer.PresharedKey)
+	if c.PresharedKey != nil && *c.PresharedKey != "" {
+		fmt.Fprintf(&b, "PresharedKey = %s\n", *c.PresharedKey)
 	}
 	return b.String()
 }

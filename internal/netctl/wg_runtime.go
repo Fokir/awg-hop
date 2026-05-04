@@ -55,7 +55,7 @@ func (c *Controller) teardownWireGuard(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// Снимаем в обратном порядке (сначала egress, в конце вход — как применяли).
+	// Снимаем в обратном порядке (сначала upstream-интерфейсы, в конце вход — как применяли).
 	for i := len(prev.ConfigPaths) - 1; i >= 0; i-- {
 		wgquick.Down(ctx, c.Runner, c.QuickBin, prev.ConfigPaths[i])
 	}
@@ -78,18 +78,18 @@ func (c *Controller) syncWireGuard(ctx context.Context, st *store.Store) ([]stri
 		return nil, err
 	}
 
-	peers, err := st.ListPeers(ctx)
+	clients, err := st.ListClients(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	ingressPath := filepath.Join(wgquick.WireguardDir(c.DataDir), in.InterfaceName+".conf")
-	ingressConf := amnezia.BuildIngressServerConf(in, peers)
+	ingressConf := amnezia.BuildIngressServerConf(in, clients)
 	if err := os.WriteFile(ingressPath, []byte(ingressConf), 0o600); err != nil {
 		return nil, err
 	}
 
-	tunnels, err := st.ListEgressTunnels(ctx)
+	upstreams, err := st.ListUpstreamTunnels(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -100,14 +100,14 @@ func (c *Controller) syncWireGuard(ctx context.Context, st *store.Store) ([]stri
 		return nil, err
 	}
 
-	for _, t := range tunnels {
+	for _, t := range upstreams {
 		if !t.Enabled || strings.TrimSpace(t.ConfigText) == "" {
 			continue
 		}
 		if err := wgquick.ValidateInterfaceName(t.InterfaceName); err != nil {
 			return nil, err
 		}
-		p := filepath.Join(wgquick.WireguardDir(c.DataDir), fmt.Sprintf("egress-%d-%s.conf", t.ID, sanitizeFilename(t.InterfaceName)))
+		p := filepath.Join(wgquick.WireguardDir(c.DataDir), fmt.Sprintf("upstream-%d-%s.conf", t.ID, sanitizeFilename(t.InterfaceName)))
 		if err := os.WriteFile(p, []byte(t.ConfigText), 0o600); err != nil {
 			return nil, err
 		}

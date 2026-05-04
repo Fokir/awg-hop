@@ -75,7 +75,7 @@ type clientNode struct {
 // Result — результат разбора, готовый к импорту.
 type Result struct {
 	Ingress domain.IngressSettings
-	Peers   []domain.Peer
+	Clients []domain.Client
 }
 
 // Parse читает JSON и валидирует формат.
@@ -166,16 +166,16 @@ func Parse(r io.Reader) (*Result, error) {
 		if v := strings.TrimSpace(c.PreSharedKey); v != "" {
 			psk = &v
 		}
-		p := domain.Peer{
+		cl := domain.Client{
 			Name:         name,
 			PrivateKey:   strings.TrimSpace(c.PrivateKey),
 			PublicKey:    strings.TrimSpace(c.PublicKey),
 			PresharedKey: psk,
 			AllowedIPs:   addr,
 			Enabled:      enabled,
-			EgressType:   domain.EgressDirect,
+			UpstreamType: domain.UpstreamDirect,
 		}
-		res.Peers = append(res.Peers, p)
+		res.Clients = append(res.Clients, cl)
 	}
 
 	return res, nil

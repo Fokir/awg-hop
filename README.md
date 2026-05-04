@@ -1,6 +1,12 @@
 # AWG Hop
 
-Админ-панель для входного **AmneziaWG** с маршрутизацией пиров через выбираемые исходящие AWG-туннели и фичами уровня `wg-easy` (импорт, бэкапы). Стек: **Go** (backend), **Svelte** (`web/` → `internal/ui/dist`), Docker.
+Админ-панель для входного **AmneziaWG**: создаёте клиентов (как в `wg-easy`), а наш сервер дополнительно умеет сам быть **AWG-клиентом** одного или нескольких удалённых AWG-серверов. Каждого клиента можно направить либо в интернет напрямую, либо через выбранный upstream-туннель.
+
+```
+устройство-клиент ─AWG─▶ AWG Hop (вход) ─AWG-клиент─▶ удалённый AWG-сервер ─▶ интернет
+```
+
+Стек: **Go** (backend), **Svelte** (`web/` → `internal/ui/dist`), Docker.
 
 [![CI](https://github.com/Fokir/awg-hop/actions/workflows/ci.yml/badge.svg)](https://github.com/Fokir/awg-hop/actions/workflows/ci.yml)
 [![Release](https://github.com/Fokir/awg-hop/actions/workflows/release.yml/badge.svg)](https://github.com/Fokir/awg-hop/actions/workflows/release.yml)
@@ -64,11 +70,11 @@ Volume `awghop-data` сохраняется между обновлениями.
 ## Что умеет
 
 * Bootstrap-мастер: пароль администратора, параметры входного AmneziaWG (Jc/Jmin/Jmax/S1..S4/H1..H4), опциональный импорт `wg-easy/wg0.json` с AmneziaWG-блоком.
-* CRUD пиров входа с генерацией ключей, AllowedIPs-аллокацией, экспортом `.conf` и QR-кодом.
-* CRUD исходящих AWG-туннелей с редактором `.conf` для `awg-quick`.
-* Per-peer egress: `direct` (NAT в интернет контейнера) или `egress_awg → <tunnel>`.
-* `POST /system/apply`: подъём интерфейсов через `awg-quick`, policy routing (`ip rule`/`ip route`) и **iptables MASQUERADE** per-peer на нужном внешнем/исходящем интерфейсе. Состояние сохраняется и атомарно откатывается.
-* `awg show <iface> dump` парсится — handshake / RX / TX отображаются для пиров и исходящих туннелей в UI и `GET /system/status`.
+* CRUD клиентов с генерацией ключей, AllowedIPs-аллокацией, экспортом `.conf` и QR-кодом.
+* CRUD upstream-подключений (наш сервер выступает AWG-клиентом удалённого сервера) с редактором `.conf` для `awg-quick`.
+* Per-client маршрут: `direct` (NAT в интернет контейнера) или `via_upstream → <upstream-туннель>`.
+* `POST /system/apply`: подъём интерфейсов через `awg-quick`, policy routing (`ip rule`/`ip route`) и **iptables MASQUERADE** per-client на нужном внешнем/upstream-интерфейсе. Состояние сохраняется и атомарно откатывается.
+* `awg show <iface> dump` парсится — handshake / RX / TX отображаются для клиентов и upstream-туннелей в UI и `GET /system/status`.
 * Бэкап: zip с БД и `manifest.json`; импорт восстанавливает БД (с `.bak`-файлом) и автоматически делает Apply.
 * CSRF (двойная cookie), rate-limit на `/auth/login`, secure-cookies при `AWGHOP_TLS=1`.
 * Структурированные логи `log/slog` (text по умолчанию, `AWGHOP_LOG_FORMAT=json` для сборщиков логов).
@@ -106,14 +112,14 @@ cd web && npm install && npm run build
 | `AWGHOP_AWG_BIN` | бинарник `awg`/`wg` для статуса | `awg` |
 | `AWGHOP_IPTABLES_BIN` | iptables/iptables-nft | `iptables` |
 | `AWGHOP_IP_BIN` | бинарник `ip` (iproute2) | `ip` |
-| `AWGHOP_EXTERNAL_IFACE` | внешний интерфейс для NAT direct-пиров | автоопределение |
+| `AWGHOP_EXTERNAL_IFACE` | внешний интерфейс для NAT direct-клиентов | автоопределение |
 | `AWGHOP_AUTO_APPLY` | вызывать `Apply` при старте | `1` |
 | `AWGHOP_LOG_LEVEL` | `debug`/`info`/`warn`/`error` | `info` |
 | `AWGHOP_LOG_FORMAT` | `text` или `json` | `text` |
 
 ## Образ Docker
 
-Образ ставит в runtime **`awg`**, **`awg-quick`** ([amneziawg-tools](https://github.com/amnezia-vpn/amneziawg-tools)) и **`amneziawg-go`** ([amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go)). Версии аpстрима зафиксированы в `Dockerfile` через `ARG AWG_TOOLS_REF` / `ARG AWG_GO_REF` — обновлять осознанно.
+Образ ставит в runtime **`awg`**, **`awg-quick`** ([amneziawg-tools](https://github.com/amnezia-vpn/amneziawg-tools)) и **`amneziawg-go`** ([amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go)). По умолчанию оба собираются из ветки `master`. Для воспроизводимых релизов передайте конкретный ref (тег или sha) через `--build-arg AWG_TOOLS_REF=…` / `AWG_GO_REF=…`.
 
 Если в контейнере нет модуля ядра `amneziawg`, `awg-quick` поднимает интерфейс через userspace (`WG_QUICK_USERSPACE_IMPLEMENTATION=/usr/local/bin/amneziawg-go`), для этого compose пробрасывает `/dev/net/tun`.
 
@@ -138,16 +144,16 @@ docker compose up --build      # использует docker-compose.yml в ре
 
 1. Сносит предыдущие `iptables`/`ip rule`/`ip route` по сохранённому state.
 2. Опускает интерфейсы AmneziaWG по списку из `wireguard-runtime-state.json`.
-3. Перегенерирует `$AWGHOP_DATA/wireguard/<iface>.conf` (вход) и `egress-<id>-*.conf` (исходящие) и поднимает их `awg-quick up`.
-4. Расставляет `ip rule from <peer>/32 → table 10000+tunnel_id` и `ip route replace default dev <egress_iface> table …`.
-5. Расставляет `iptables -t nat -A POSTROUTING -s <peer>/32 -o <iface> -j MASQUERADE`:
+3. Перегенерирует `$AWGHOP_DATA/wireguard/<iface>.conf` (вход) и `upstream-<id>-*.conf` (наши исходящие подключения) и поднимает их `awg-quick up`.
+4. Расставляет `ip rule from <client>/32 → table 10000+upstream_tunnel_id` и `ip route replace default dev <upstream_iface> table …`.
+5. Расставляет `iptables -t nat -A POSTROUTING -s <client>/32 -o <iface> -j MASQUERADE`:
    * для `direct` — на внешний интерфейс контейнера (по `AWGHOP_EXTERNAL_IFACE`/`system_settings.external_interface` или autodetect через `ip route get 1.1.1.1`);
-   * для `egress_awg` — на интерфейс исходящего туннеля.
+   * для `via_upstream` — на интерфейс выбранного upstream-туннеля.
 6. Сохраняет state на диск.
 
-Политика недоступного исходящего туннеля — `system_settings.tunnel_offline_policy`:
-* `block` (по умолчанию, согласно §6.4) — `Apply` падает, если у пира выбран отсутствующий/выключенный туннель;
-* `ignore` — пир пропускается, остальной конфиг применяется.
+Политика недоступного upstream-туннеля — `system_settings.tunnel_offline_policy`:
+* `block` (по умолчанию, согласно §6.4) — `Apply` падает, если у клиента выбран отсутствующий/выключенный upstream;
+* `ignore` — клиент пропускается, остальной конфиг применяется.
 
 ## Безопасность
 

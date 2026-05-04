@@ -35,11 +35,11 @@
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await api<{ status: string; peers: number }>(
+      const res = await api<{ status: string; clients: number }>(
         '/api/v1/setup/wg-easy-import',
         { formData: fd },
       );
-      info = `wg-easy импортирован: ${res.peers} пиров. Нажмите «Применить».`;
+      info = `wg-easy импортирован: ${res.clients} клиентов. Нажмите «Применить».`;
     } catch (e) {
       error = e instanceof ApiError ? `${e.code}: ${e.message}` : String(e);
     } finally {
@@ -52,7 +52,7 @@
   <h2>Резервное копирование</h2>
 
   <h3>Экспорт</h3>
-  <p class="hint">Скачает <code>awghop-backup.zip</code> с БД (ключи, пиры, туннели, сессии) и манифестом.</p>
+  <p class="hint">Скачает <code>awghop-backup.zip</code> с БД (ключи, клиенты, upstream-туннели, сессии) и манифестом.</p>
   <p><a class="btn" href="/api/v1/backup/export">Скачать бэкап</a></p>
 
   <h3>Импорт</h3>
