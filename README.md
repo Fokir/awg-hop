@@ -16,56 +16,114 @@
 
 ## Быстрый старт (Docker Compose)
 
-Собранные multi-arch (`linux/amd64`, `linux/arm64`) образы публикуются на каждый push в `main` и на каждый тег `v*` в `ghcr.io/fokir/awg-hop`.
+Собранные multi-arch (`linux/amd64`, `linux/arm64`) образы публикуются на каждый push в `main` и на каждый тег `v*` в `ghcr.io/fokir/awg-hop`. Поэтому установка сводится к скачиванию compose-файла и `docker compose up -d`.
 
-### 1. Минимальная установка (HTTP на localhost)
+Выберите один из двух сценариев ниже.
 
-```bash
-mkdir awghop && cd awghop
-curl -fLO https://raw.githubusercontent.com/Fokir/awg-hop/main/docker-compose.standalone.yml
+---
 
-docker compose -f docker-compose.standalone.yml up -d
-```
+### Сценарий A. Локальная установка (HTTP на 127.0.0.1)
 
-После старта откройте `http://127.0.0.1:8080` и пройдите мастер первого запуска. AmneziaWG слушает UDP `51820` снаружи; данные хранятся в docker-volume `awghop-data`.
+Подходит для тестирования или когда у вас уже есть внешний reverse proxy.
 
-> Используйте этот режим только для локального тестирования или за внешним reverse proxy. Для прода — следующий пункт.
+**Требования:** Linux-хост с публичным IP, Docker 24+ с плагином `compose`, открытый UDP `51820`.
 
-### 2. Production: HTTPS через Caddy + Let's Encrypt
+1. **Подготовьте каталог и compose-файл:**
 
-```bash
-mkdir awghop && cd awghop
-curl -fLO https://raw.githubusercontent.com/Fokir/awg-hop/main/docker-compose.example.yml
-curl -fLO https://raw.githubusercontent.com/Fokir/awg-hop/main/Caddyfile
-mv docker-compose.example.yml docker-compose.yml
+   ```bash
+   mkdir awghop && cd awghop
+   curl -fLO https://raw.githubusercontent.com/Fokir/awg-hop/main/docker-compose.standalone.yml
+   ```
 
-cat > .env <<'EOF'
-AWGHOP_DOMAIN=awghop.example.com
-AWGHOP_LE_EMAIL=admin@example.com
-AWGHOP_IMAGE_TAG=latest
-EOF
+2. **Поднимите контейнер:**
 
-docker compose up -d
-```
+   ```bash
+   docker compose -f docker-compose.standalone.yml up -d
+   ```
 
-Caddy сам получит TLS-сертификат и будет проксировать `https://awghop.example.com → awghop:8080` с HSTS/CSP/X-Frame-Options.
+3. **Откройте админку и пройдите мастер:** `http://127.0.0.1:8080` →
+   * задайте пароль администратора;
+   * укажите публичный endpoint AmneziaWG (`<публичный_IP_хоста>:51820` или DNS-имя);
+   * при наличии `wg-easy` экспорта с включённым AmneziaWG — загрузите `wg0.json`.
 
-Убедитесь, что:
-* DNS `AWGHOP_DOMAIN` указывает на хост (для ACME http-01),
-* открыты порты `80/tcp`, `443/tcp` (для Let's Encrypt и UI) и `51820/udp` (для AmneziaWG),
-* в фаерволе/cloud security-group выставлены те же правила.
+4. **Создайте первого клиента:** вкладка **Клиенты → + Новый клиент**, скачайте `.conf` или QR. Подключитесь с телефона/ПК, проверьте, что трафик идёт.
 
-### 3. Закрепить версию
+5. **(Опционально) Добавьте upstream:** вкладка **Upstream-подключения → + Новый upstream**, вставьте `.conf` для `awg-quick` от удалённого AWG-сервера. Затем у клиента смените маршрут на «через upstream».
 
-В `.env` укажите `AWGHOP_IMAGE_TAG=v0.2.0` (или другой опубликованный тег). Список тегов — на [GitHub Releases](https://github.com/Fokir/awg-hop/releases) или странице GHCR.
+6. **Применить изменения:** кнопка **«Применить»** на Dashboard (или `POST /api/v1/system/apply`) — поднимет интерфейсы, расставит `ip rule`/`iptables MASQUERADE`.
 
-### 4. Обновление
+> Файрвол: убедитесь, что UDP `51820` открыт из интернета. HTTP `8080` биндится только на `127.0.0.1`.
+
+---
+
+### Сценарий B. Production: HTTPS через Caddy + Let's Encrypt
+
+Подходит для боевого развёртывания: автоматический TLS, заголовки безопасности (HSTS/CSP/X-Frame-Options), аккуратный reverse proxy.
+
+**Требования:** Linux-хост с публичным IP, Docker 24+, домен с A/AAAA-записью на этот IP, открытые порты `80/tcp`, `443/tcp`, `51820/udp`.
+
+1. **Подготовьте каталог:**
+
+   ```bash
+   mkdir awghop && cd awghop
+   ```
+
+2. **Скачайте compose и Caddyfile:**
+
+   ```bash
+   curl -fLO https://raw.githubusercontent.com/Fokir/awg-hop/main/docker-compose.example.yml
+   curl -fLO https://raw.githubusercontent.com/Fokir/awg-hop/main/Caddyfile
+   mv docker-compose.example.yml docker-compose.yml
+   ```
+
+3. **Создайте `.env` с вашим доменом и e-mail для ACME:**
+
+   ```bash
+   cat > .env <<'EOF'
+   AWGHOP_DOMAIN=awghop.example.com
+   AWGHOP_LE_EMAIL=admin@example.com
+   AWGHOP_IMAGE_TAG=latest
+   EOF
+   ```
+
+   Для воспроизводимости лучше зафиксировать тег: `AWGHOP_IMAGE_TAG=v0.2.0` (см. [GitHub Releases](https://github.com/Fokir/awg-hop/releases)).
+
+4. **Проверьте сетевые требования:**
+
+   * `dig +short awghop.example.com` возвращает публичный IP хоста (нужно для ACME http-01);
+   * `ufw`/cloud security-group разрешают входящие `80/tcp`, `443/tcp`, `51820/udp`;
+   * `net.ipv4.ip_forward=1` на хосте (compose выставляет его в самом контейнере, но если у вас кастомный sysctl на хосте — проверьте).
+
+5. **Поднимите стек:**
+
+   ```bash
+   docker compose up -d
+   docker compose logs -f caddy   # дождитесь "certificate obtained successfully"
+   ```
+
+   Caddy выпустит TLS-сертификат и начнёт проксировать `https://awghop.example.com → awghop:8080`.
+
+6. **Откройте админку и пройдите мастер:** `https://awghop.example.com` — те же шаги, что в сценарии A (пароль, endpoint, клиенты, upstream'ы, Apply).
+
+7. **(Рекомендуется) Сделайте первый бэкап:** вкладка **Бэкап / Импорт → Скачать бэкап** — сохраните `.zip` куда-то вне хоста.
+
+---
+
+### Обновление и закрепление версии
 
 ```bash
 docker compose pull && docker compose up -d
 ```
 
-Volume `awghop-data` сохраняется между обновлениями. Перед минорным апгрейдом рекомендуется зайти в админку и нажать **«Скачать бэкап»** на вкладке *Бэкап / Импорт*.
+Volume `awghop-data` сохраняется между апгрейдами. Перед минорным обновлением скачайте бэкап (вкладка *Бэкап / Импорт*).
+
+Чтобы зафиксироваться на конкретной версии — пропишите в `.env`:
+
+```env
+AWGHOP_IMAGE_TAG=v0.2.0
+```
+
+Список доступных тегов — на [GHCR](https://github.com/Fokir/awg-hop/pkgs/container/awg-hop) и в [Releases](https://github.com/Fokir/awg-hop/releases).
 
 ## Что умеет
 
