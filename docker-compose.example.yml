@@ -1,0 +1,65 @@
+# Эталонный production-compose для AWG Hop:
+#  * AWG Hop — образ из ghcr.io/Fokir/awg-hop, слушает только во внутренней docker-сети
+#  * Caddy предоставляет HTTPS (Let's Encrypt) и форвардит на awghop:8080
+#  * UDP-порт 51820 публикуется наружу для AmneziaWG-клиентов
+#
+# Перед запуском:
+#  1. Скопируйте этот файл как docker-compose.yml.
+#  2. Задайте AWGHOP_DOMAIN и AWGHOP_LE_EMAIL в .env (рядом с compose).
+#  3. (опц.) AWGHOP_IMAGE_TAG=v0.2.0 — закрепить версию образа (по умолчанию latest).
+#  4. (опц.) AWGHOP_ALLOWED_ORIGINS — если SPA размещается на другом домене.
+#
+# Минимальный .env:
+#   AWGHOP_DOMAIN=awghop.example.com
+#   AWGHOP_LE_EMAIL=admin@example.com
+#   AWGHOP_IMAGE_TAG=latest
+
+services:
+  awghop:
+    image: ghcr.io/fokir/awg-hop:${AWGHOP_IMAGE_TAG:-latest}
+    networks: [awghop_internal]
+    expose:
+      - "8080"
+    ports:
+      - "51820:51820/udp"
+    environment:
+      AWGHOP_LISTEN: ":8080"
+      AWGHOP_DATA: /data
+      AWGHOP_LOG_FORMAT: json
+      AWGHOP_LOG_LEVEL: info
+      AWGHOP_TLS: "1"
+      AWGHOP_ALLOWED_ORIGINS: ${AWGHOP_ALLOWED_ORIGINS:-}
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    sysctls:
+      - net.ipv4.ip_forward=1
+    volumes:
+      - awghop-data:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    networks: [awghop_internal]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      AWGHOP_DOMAIN: ${AWGHOP_DOMAIN}
+      AWGHOP_LE_EMAIL: ${AWGHOP_LE_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - awghop
+    restart: unless-stopped
+
+networks:
+  awghop_internal:
+
+volumes:
+  awghop-data:
+  caddy-data:
+  caddy-config:

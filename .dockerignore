@@ -1,0 +1,6 @@
+.git
+bin
+data
+**/node_modules
+*.db
+.cursor

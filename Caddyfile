@@ -1,0 +1,22 @@
+{
+	email {$AWGHOP_LE_EMAIL}
+}
+
+{$AWGHOP_DOMAIN} {
+	encode zstd gzip
+
+	# Жёсткие security-заголовки для админки.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		# CSP подходит для текущего bundled SPA Svelte.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+	}
+
+	reverse_proxy awghop:8080 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host  {host}
+	}
+}

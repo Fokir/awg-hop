@@ -1,0 +1,52 @@
+-- AWG Hop MVP schema
+
+CREATE TABLE IF NOT EXISTS admin_account (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	password_hash TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ingress_settings (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	listen_port INTEGER NOT NULL DEFAULT 51820,
+	host_endpoint TEXT NOT NULL DEFAULT '',
+	tunnel_subnet TEXT NOT NULL DEFAULT '10.8.0.0/24',
+	dns_servers TEXT NOT NULL DEFAULT '1.1.1.1',
+	mtu INTEGER NOT NULL DEFAULT 1420,
+	interface_name TEXT NOT NULL DEFAULT 'awg0',
+	server_tunnel_ip TEXT NOT NULL DEFAULT '10.8.0.1',
+	jc INTEGER NOT NULL DEFAULT 4,
+	jmin INTEGER NOT NULL DEFAULT 50,
+	jmax INTEGER NOT NULL DEFAULT 1000,
+	s1 TEXT NOT NULL DEFAULT '',
+	s2 TEXT NOT NULL DEFAULT '',
+	s3 TEXT NOT NULL DEFAULT '',
+	s4 TEXT NOT NULL DEFAULT '',
+	h1 INTEGER NOT NULL DEFAULT 0,
+	h2 INTEGER NOT NULL DEFAULT 0,
+	h3 INTEGER NOT NULL DEFAULT 0,
+	h4 INTEGER NOT NULL DEFAULT 0,
+	updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+	token TEXT PRIMARY KEY,
+	expires_at TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS peers (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	name TEXT NOT NULL,
+	private_key TEXT NOT NULL,
+	public_key TEXT NOT NULL,
+	preshared_key TEXT,
+	allowed_ips TEXT NOT NULL,
+	enabled INTEGER NOT NULL DEFAULT 1,
+	egress_type TEXT NOT NULL DEFAULT 'direct' CHECK (egress_type IN ('direct', 'egress_awg')),
+	egress_tunnel_id INTEGER,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_peers_enabled ON peers (enabled);

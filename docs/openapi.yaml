@@ -1,0 +1,423 @@
+openapi: 3.0.3
+info:
+  title: AWG Hop API
+  version: 0.2.0
+  description: |
+    REST API админ-панели AWG Hop. Все state-changing вызовы требуют:
+      * httpOnly-сессионную cookie `awghop_session` (получается через `/auth/login`),
+      * CSRF-токен `awghop_csrf` (cookie выставляется автоматически), отправляемый в
+        заголовке `X-CSRF-Token` (двойная cookie pattern).
+servers:
+  - url: /api/v1
+security:
+  - cookieAuth: [csrfHeader]
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: awghop_session
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+    SetupStatus:
+      type: object
+      required: [setup_complete]
+      properties:
+        setup_complete:
+          type: boolean
+    EgressType:
+      type: string
+      enum: [direct, egress_awg]
+    PeerStatus:
+      type: object
+      properties:
+        public_key: { type: string }
+        endpoint: { type: string }
+        latest_handshake_unix: { type: integer, format: int64 }
+        transfer_rx_bytes: { type: integer, format: int64 }
+        transfer_tx_bytes: { type: integer, format: int64 }
+        persistent_keepalive: { type: integer }
+    Peer:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        public_key: { type: string }
+        preshared_key: { type: string, nullable: true }
+        allowed_ips: { type: string }
+        enabled: { type: boolean }
+        egress_type: { $ref: '#/components/schemas/EgressType' }
+        egress_tunnel_id: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        status:
+          $ref: '#/components/schemas/PeerStatus'
+    EgressTunnelStatus:
+      type: object
+      properties:
+        interface_up: { type: boolean }
+        latest_handshake_unix: { type: integer, format: int64 }
+        transfer_rx_bytes: { type: integer, format: int64 }
+        transfer_tx_bytes: { type: integer, format: int64 }
+        last_error: { type: string }
+    EgressTunnel:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        interface_name: { type: string }
+        config_text: { type: string }
+        enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/EgressTunnelStatus' }
+    IngressSettings:
+      type: object
+      properties:
+        listen_port: { type: integer }
+        host_endpoint: { type: string }
+        tunnel_subnet: { type: string }
+        dns_servers: { type: string }
+        mtu: { type: integer }
+        interface_name: { type: string }
+        server_tunnel_ip: { type: string }
+        server_public_key: { type: string }
+        jc: { type: integer }
+        jmin: { type: integer }
+        jmax: { type: integer }
+        s1: { type: string }
+        s2: { type: string }
+        s3: { type: string }
+        s4: { type: string }
+        h1: { type: integer, format: int64 }
+        h2: { type: integer, format: int64 }
+        h3: { type: integer, format: int64 }
+        h4: { type: integer, format: int64 }
+    SystemSettings:
+      type: object
+      properties:
+        external_interface: { type: string }
+        tunnel_offline_policy:
+          type: string
+          enum: [block, ignore]
+        client_allowed_ipv4: { type: string }
+        client_allowed_ipv6: { type: string }
+        updated_at: { type: string, format: date-time }
+
+paths:
+  /health:
+    get:
+      summary: Liveness probe
+      security: []
+      responses:
+        '200': { description: ok }
+  /setup/status:
+    get:
+      summary: Готова ли учётка
+      security: []
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetupStatus' }
+  /setup/bootstrap:
+    post:
+      summary: Первоначальная установка
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, ingress]
+              properties:
+                password: { type: string, minLength: 8 }
+                ingress: { $ref: '#/components/schemas/IngressSettings' }
+      responses:
+        '201': { description: created }
+        '409':
+          description: already setup
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /setup/wg-easy-import:
+    post:
+      summary: Импорт wg-easy с AmneziaWG
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: ok }
+        '422':
+          description: vanilla wg-easy not supported
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /auth/login:
+    post:
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+      responses:
+        '200': { description: ok }
+        '401':
+          description: invalid credentials
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: rate limited
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /auth/logout:
+    post:
+      responses:
+        '200': { description: ok }
+
+  /settings/ingress:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngressSettings' }
+    put:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IngressSettings' }
+      responses:
+        '200': { description: ok }
+
+  /settings/system:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemSettings' }
+    put:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SystemSettings' }
+      responses:
+        '200': { description: ok }
+
+  /peers:
+    get:
+      summary: Список пиров входа с runtime-статусом
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Peer' }
+    post:
+      summary: Создать пира
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                allowed_ips: { type: string }
+                private_key: { type: string }
+                public_key: { type: string }
+                generate_psk: { type: boolean }
+                egress_type: { $ref: '#/components/schemas/EgressType' }
+                egress_tunnel_id: { type: integer, nullable: true }
+      responses:
+        '201': { description: created }
+
+  /peers/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Peer' }
+    patch:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                enabled: { type: boolean }
+                allowed_ips: { type: string }
+                egress_type: { $ref: '#/components/schemas/EgressType' }
+                egress_tunnel_id: { type: integer, nullable: true }
+      responses:
+        '200': { description: ok }
+    delete:
+      responses:
+        '204': { description: deleted }
+
+  /peers/{id}/config:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    get:
+      summary: Текстовый AmneziaWG `.conf`
+      responses:
+        '200':
+          description: ok
+          content:
+            text/plain: {}
+
+  /peers/{id}/qrcode:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    get:
+      summary: PNG QR клиентского `.conf`
+      responses:
+        '200':
+          description: ok
+          content:
+            image/png: {}
+
+  /peers/{id}/enable:
+    parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+    post:
+      responses:
+        '200': { description: ok }
+  /peers/{id}/disable:
+    parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+    post:
+      responses:
+        '200': { description: ok }
+
+  /egress-tunnels:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EgressTunnel' }
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EgressTunnel' }
+      responses:
+        '201': { description: created }
+
+  /egress-tunnels/{id}:
+    parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EgressTunnel' }
+    patch:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EgressTunnel' }
+      responses:
+        '200': { description: ok }
+    delete:
+      responses:
+        '204': { description: deleted }
+        '409':
+          description: tunnel referenced by peers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /system/apply:
+    post:
+      summary: Перевыкатывает интерфейсы, policy routing и NAT
+      responses:
+        '200': { description: ok }
+  /system/status:
+    get:
+      summary: Сводный статус (handshake пиров, статусы туннелей, last_error)
+      responses:
+        '200': { description: ok }
+
+  /backup/export:
+    get:
+      summary: Скачать zip-архив бэкапа
+      responses:
+        '200':
+          description: ok
+          content:
+            application/zip: {}
+  /backup/import:
+    post:
+      summary: Восстановить из zip-архива (multipart `file`)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200': { description: ok }
