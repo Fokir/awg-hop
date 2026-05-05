@@ -3,7 +3,6 @@ package netctl
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -73,11 +72,7 @@ func (c *Controller) setErr(err error) {
 //  4. Применение правил policy routing и NAT с сохранением state.
 func (c *Controller) Apply(ctx context.Context, st *store.Store) error {
 	prevPol, _ := c.loadState()
-	if err := c.undo(ctx, prevPol); err != nil {
-		c.Log.Warn("netctl: undo policy routing failed", "err", err)
-		c.setErr(err)
-		return err
-	}
+	c.undo(ctx, prevPol)
 	prevNAT, _ := c.loadNATState()
 	c.undoNAT(ctx, prevNAT)
 
@@ -203,17 +198,26 @@ func (c *Controller) Apply(ctx context.Context, st *store.Store) error {
 	return nil
 }
 
-func (c *Controller) undo(ctx context.Context, prev *PolicyState) error {
+// undo откатывает policy-routing-правила и таблицы предыдущего применения.
+//
+// Реализация — best-effort: ошибки `ip rule del` / `ip route flush` НЕ
+// прерывают Apply и НЕ возвращаются вверх. На свежем netns (после
+// `docker compose up -d --force-recreate`, рестарта хоста или потери
+// сетевых неймспейсов) обе команды легитимно вернут exit 2 / 254
+// ("FIB table does not exist", "RTNETLINK answers: No such file..."),
+// и это нормальное состояние "уже очищено". Любые прочие ошибки тоже
+// не должны блокировать применение свежей конфигурации — поэтому только
+// логируем их и идём дальше.
+func (c *Controller) undo(ctx context.Context, prev *PolicyState) {
 	if prev == nil {
-		return nil
+		return
 	}
 	if len(prev.Rules) == 0 && len(prev.Routes) == 0 {
-		return nil
+		return
 	}
-	var errs []error
 	for _, r := range prev.Rules {
 		if _, err := c.Runner.Run(ctx, c.IPBin, "rule", "del", "pref", strconv.Itoa(r.Pref)); err != nil {
-			errs = append(errs, err)
+			c.Log.Debug("netctl: undo ip rule del (already gone or transient)", "pref", r.Pref, "err", err)
 		}
 	}
 	seen := make(map[int]struct{})
@@ -223,13 +227,9 @@ func (c *Controller) undo(ctx context.Context, prev *PolicyState) error {
 		}
 		seen[rt.Table] = struct{}{}
 		if _, err := c.Runner.Run(ctx, c.IPBin, "route", "flush", "table", strconv.Itoa(rt.Table)); err != nil {
-			errs = append(errs, err)
+			c.Log.Debug("netctl: undo ip route flush (already gone or transient)", "table", rt.Table, "err", err)
 		}
 	}
-	if len(errs) == 0 {
-		return nil
-	}
-	return errors.Join(errs...)
 }
 
 func (c *Controller) loadState() (*PolicyState, error) {
