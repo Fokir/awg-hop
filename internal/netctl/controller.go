@@ -87,17 +87,20 @@ func (c *Controller) Apply(ctx context.Context, st *store.Store) error {
 		return err
 	}
 
-	wgPaths, err := c.syncWireGuard(ctx, st)
-	if err != nil {
-		c.Log.Warn("netctl: sync wireguard failed", "err", err)
-		c.setErr(err)
-		return err
-	}
-	if runtime.GOOS == "linux" {
+	wgPaths, syncErr := c.syncWireGuard(ctx, st)
+	// Сохраняем state с теми путями, что успешно поднялись, даже если
+	// syncWireGuard вернул агрегатную ошибку — иначе teardownWireGuard
+	// при следующем Apply не снесёт уже поднятые интерфейсы.
+	if runtime.GOOS == "linux" && len(wgPaths) > 0 {
 		if err := c.saveWGRuntime(&wgRuntimeState{ConfigPaths: wgPaths}); err != nil {
 			c.setErr(err)
 			return err
 		}
+	}
+	if syncErr != nil {
+		c.Log.Warn("netctl: sync wireguard failed", "err", syncErr)
+		c.setErr(syncErr)
+		return syncErr
 	}
 
 	upstreams, err := st.ListUpstreamTunnels(ctx)

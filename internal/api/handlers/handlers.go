@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -35,6 +36,27 @@ type Handlers struct {
 	Store *store.Store
 	Cfg   config.Config
 	Net   *netctl.Controller
+}
+
+// applyAfterMutation вызывает Controller.Apply после успешной мутации
+// в БД (создание/обновление/удаление клиента, апстрима, ingress-настроек).
+//
+// Решение по UX: при ошибке Apply мы НЕ возвращаем 5xx — БД уже консистентна,
+// а клиент UI в любом случае делает refetch и сразу увидит реальное состояние
+// в `system/status.last_error` и `upstreams[].status` (благодаря захвату
+// stderr ошибки теперь информативные). Ошибка всё равно попадает в логи,
+// чтобы оставался детальный аудит-след.
+func (h *Handlers) applyAfterMutation(ctx context.Context, op string) {
+	if h.Net == nil {
+		return
+	}
+	if err := h.Net.Apply(ctx, h.Store); err != nil {
+		slog.Warn("netctl apply failed after API mutation",
+			"op", op,
+			"err", err,
+			"hint", "DB state is up to date; check system/status.last_error and upstreams[].status",
+		)
+	}
 }
 
 func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
@@ -266,6 +288,7 @@ func (h *Handlers) PutIngress(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "update_failed", err.Error())
 		return
 	}
+	h.applyAfterMutation(r.Context(), "PutIngress")
 	out := body
 	out.ServerPrivateKey = ""
 	respond.JSON(w, http.StatusOK, out)
@@ -416,6 +439,7 @@ func (h *Handlers) CreateClient(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "reload", err.Error())
 		return
 	}
+	h.applyAfterMutation(r.Context(), "CreateClient")
 	out.PrivateKey = ""
 	respond.JSON(w, http.StatusCreated, out)
 }
@@ -498,6 +522,7 @@ func (h *Handlers) PatchClient(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "update", err.Error())
 		return
 	}
+	h.applyAfterMutation(r.Context(), "PatchClient")
 	c.PrivateKey = ""
 	respond.JSON(w, http.StatusOK, c)
 }
@@ -512,6 +537,7 @@ func (h *Handlers) DeleteClient(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "delete", err.Error())
 		return
 	}
+	h.applyAfterMutation(r.Context(), "DeleteClient")
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -608,6 +634,11 @@ func (h *Handlers) setClientEnabled(w http.ResponseWriter, r *http.Request, en b
 	if err := h.Store.UpdateClient(r.Context(), c); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "update", err.Error())
 		return
+	}
+	if en {
+		h.applyAfterMutation(r.Context(), "EnableClient")
+	} else {
+		h.applyAfterMutation(r.Context(), "DisableClient")
 	}
 	c.PrivateKey = ""
 	respond.JSON(w, http.StatusOK, c)

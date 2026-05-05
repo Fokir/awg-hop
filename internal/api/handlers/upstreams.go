@@ -104,6 +104,7 @@ func (h *Handlers) CreateUpstream(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "reload", err.Error())
 		return
 	}
+	h.applyAfterMutation(r.Context(), "CreateUpstream")
 	respond.JSON(w, http.StatusCreated, out)
 }
 
@@ -194,6 +195,7 @@ func (h *Handlers) PatchUpstream(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "reload", err.Error())
 		return
 	}
+	h.applyAfterMutation(r.Context(), "PatchUpstream")
 	respond.JSON(w, http.StatusOK, out)
 }
 
@@ -212,5 +214,6 @@ func (h *Handlers) DeleteUpstream(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "delete", err.Error())
 		return
 	}
+	h.applyAfterMutation(r.Context(), "DeleteUpstream")
 	w.WriteHeader(http.StatusNoContent)
 }

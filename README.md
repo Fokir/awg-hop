@@ -229,6 +229,17 @@ docker compose up --build      # использует docker-compose.yml в ре
 
 ## Применение конфигурации
 
+С v0.2.6 любая успешная мутация админ-API (создание/правка/удаление клиента,
+апстрима, ingress-настроек) автоматически вызывает `Controller.Apply` —
+явный `POST /api/v1/system/apply` нужен только для ручной перевыкатки. Если
+автоматический Apply падает, состояние БД остаётся консистентным; ошибка
+попадает в лог (`netctl apply failed after API mutation`) и в
+`GET /api/v1/system/status.last_error`.
+
+С v0.2.6 один битый upstream больше не валит весь Apply: ошибки отдельных
+туннелей агрегируются (`some upstreams failed: …`), а интерфейсы, поднявшиеся
+успешно, остаются на месте и сохраняются в `wireguard-runtime-state.json`.
+
 `POST /api/v1/system/apply` (или кнопка «Применить» в Dashboard) делает:
 
 1. Сносит предыдущие `iptables`/`ip rule`/`ip route` по сохранённому state.

@@ -3,6 +3,7 @@ package netctl
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -112,18 +113,29 @@ func (c *Controller) syncWireGuard(ctx context.Context, st *store.Store) ([]stri
 		return nil, err
 	}
 
+	// Best-effort режим для апстримов: ошибки отдельных туннелей не должны
+	// валить весь Apply и снимать уже работающие. Каждый апстрим обрабатывается
+	// независимо; ошибки агрегируются и возвращаются в конце как errors.Join.
+	// Поднявшиеся апстримы попадают в paths и будут корректно «снесены» при
+	// следующем teardownWireGuard.
+	var upstreamErrs []error
 	for _, t := range upstreams {
 		if !t.Enabled || strings.TrimSpace(t.ConfigText) == "" {
 			continue
 		}
 		if err := wgquick.ValidateInterfaceName(t.InterfaceName); err != nil {
-			return nil, fmt.Errorf("upstream %d (%q) has invalid interface name: %w", t.ID, t.Name, err)
+			upstreamErrs = append(upstreamErrs, fmt.Errorf("upstream %d (%q) invalid interface name: %w", t.ID, t.Name, err))
+			c.Log.Warn("netctl: upstream skipped (invalid interface name)", "upstream_id", t.ID, "iface", t.InterfaceName, "err", err)
+			continue
 		}
 		// awg-quick извлекает имя интерфейса из basename .conf-файла и требует
 		// его соответствия Linux IFNAMSIZ (<=15 символов). Поэтому файл должен
 		// называться ровно "<interface_name>.conf", без префиксов.
 		if t.InterfaceName == in.InterfaceName {
-			return nil, fmt.Errorf("upstream %d (%q) interface name %q collides with ingress interface", t.ID, t.Name, t.InterfaceName)
+			err := fmt.Errorf("upstream %d (%q) interface name %q collides with ingress interface", t.ID, t.Name, t.InterfaceName)
+			upstreamErrs = append(upstreamErrs, err)
+			c.Log.Warn("netctl: upstream skipped (collides with ingress)", "upstream_id", t.ID, "iface", t.InterfaceName)
+			continue
 		}
 		p := filepath.Join(wgquick.WireguardDir(c.DataDir), t.InterfaceName+".conf")
 		// Готовим конфиг апстрима для awg-quick:
@@ -138,15 +150,21 @@ func (c *Controller) syncWireGuard(ctx context.Context, st *store.Store) ([]stri
 		confText := wgquick.StripInterfaceDirective(t.ConfigText, "DNS")
 		confText = wgquick.SetInterfaceDirective(confText, "Table", "off")
 		if err := os.WriteFile(p, []byte(confText), 0o600); err != nil {
-			return nil, err
+			upstreamErrs = append(upstreamErrs, fmt.Errorf("upstream %d (%q) write conf: %w", t.ID, t.Name, err))
+			c.Log.Warn("netctl: upstream skipped (write conf failed)", "upstream_id", t.ID, "iface", t.InterfaceName, "err", err)
+			continue
+		}
+		if err := wgquick.Up(ctx, c.Runner, c.QuickBin, p); err != nil {
+			upstreamErrs = append(upstreamErrs, fmt.Errorf("upstream %d (%q) awg-quick up: %w", t.ID, t.Name, err))
+			c.Log.Warn("netctl: awg-quick up (upstream) failed", "upstream_id", t.ID, "iface", t.InterfaceName, "config", p, "err", err)
+			continue
 		}
 		paths = append(paths, p)
-		if err := wgquick.Up(ctx, c.Runner, c.QuickBin, p); err != nil {
-			c.Log.Warn("netctl: awg-quick up (upstream) failed", "upstream_id", t.ID, "iface", t.InterfaceName, "config", p, "err", err)
-			return nil, err
-		}
 	}
 
+	if len(upstreamErrs) > 0 {
+		return paths, fmt.Errorf("some upstreams failed: %w", errors.Join(upstreamErrs...))
+	}
 	return paths, nil
 }
 
