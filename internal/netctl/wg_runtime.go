@@ -117,9 +117,15 @@ func (c *Controller) syncWireGuard(ctx context.Context, st *store.Store) ([]stri
 			continue
 		}
 		if err := wgquick.ValidateInterfaceName(t.InterfaceName); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("upstream %d (%q) has invalid interface name: %w", t.ID, t.Name, err)
 		}
-		p := filepath.Join(wgquick.WireguardDir(c.DataDir), fmt.Sprintf("upstream-%d-%s.conf", t.ID, sanitizeFilename(t.InterfaceName)))
+		// awg-quick извлекает имя интерфейса из basename .conf-файла и требует
+		// его соответствия Linux IFNAMSIZ (<=15 символов). Поэтому файл должен
+		// называться ровно "<interface_name>.conf", без префиксов.
+		if t.InterfaceName == in.InterfaceName {
+			return nil, fmt.Errorf("upstream %d (%q) interface name %q collides with ingress interface", t.ID, t.Name, t.InterfaceName)
+		}
+		p := filepath.Join(wgquick.WireguardDir(c.DataDir), t.InterfaceName+".conf")
 		if err := os.WriteFile(p, []byte(t.ConfigText), 0o600); err != nil {
 			return nil, err
 		}
@@ -133,23 +139,3 @@ func (c *Controller) syncWireGuard(ctx context.Context, st *store.Store) ([]stri
 	return paths, nil
 }
 
-func sanitizeFilename(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == '.', r == '_', r == '-':
-			b.WriteRune(r)
-		default:
-			b.WriteRune('_')
-		}
-	}
-	if b.Len() == 0 {
-		return "iface"
-	}
-	if b.Len() > 32 {
-		return b.String()[:32]
-	}
-	return b.String()
-}
