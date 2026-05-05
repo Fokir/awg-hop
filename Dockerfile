@@ -47,8 +47,10 @@ COPY --from=frontend /src/internal/ui/dist ./internal/ui/dist
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /awghop ./cmd/awghop
 
 FROM debian:bookworm-slim
+# procps -- даёт `sysctl`, который зовёт awg-quick для отключения rp_filter
+# при default-route через туннель; без него awg-quick падает с exit 127.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates bash iproute2 iptables nftables tini \
+    ca-certificates bash iproute2 iptables nftables procps tini \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=awg-tools-build /staging/usr/bin/awg /staging/usr/bin/awg-quick /usr/local/bin/
 COPY --from=awg-go-build /staging/usr/bin/amneziawg-go /usr/local/bin/
