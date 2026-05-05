@@ -72,3 +72,36 @@ func TestStripInterfaceDirective_NoOpWithoutKeys(t *testing.T) {
 		t.Errorf("no keys -> input unchanged, got:\n%s", got)
 	}
 }
+
+func TestSetInterfaceDirective_AddsKeyAfterInterfaceHeader(t *testing.T) {
+	in := "[Interface]\nAddress = 10.0.0.1/24\nPrivateKey = abc\n\n[Peer]\nPublicKey = xyz\n"
+	got := SetInterfaceDirective(in, "Table", "off")
+	if !strings.Contains(got, "[Interface]\nTable = off\n") {
+		t.Errorf("Table = off must be inserted right after [Interface], got:\n%s", got)
+	}
+	if !strings.Contains(got, "Address = 10.0.0.1/24") || !strings.Contains(got, "PublicKey = xyz") {
+		t.Errorf("other content must be preserved, got:\n%s", got)
+	}
+	if strings.Count(got, "Table = off") != 1 {
+		t.Errorf("Table = off must appear exactly once, got:\n%s", got)
+	}
+}
+
+func TestSetInterfaceDirective_ReplacesExistingValue(t *testing.T) {
+	in := "[Interface]\nAddress = 10.0.0.1/24\nTable = 51820\nPrivateKey = abc\n"
+	got := SetInterfaceDirective(in, "Table", "off")
+	if strings.Contains(got, "Table = 51820") {
+		t.Errorf("old Table value must be removed, got:\n%s", got)
+	}
+	if strings.Count(got, "Table = off") != 1 {
+		t.Errorf("Table = off must appear exactly once, got:\n%s", got)
+	}
+}
+
+func TestSetInterfaceDirective_OnlyTouchesInterfaceSection(t *testing.T) {
+	in := "[Peer]\nTable = 5\n[Interface]\nPrivateKey = abc\n"
+	got := SetInterfaceDirective(in, "Table", "off")
+	if !strings.Contains(got, "[Peer]\nTable = 5") {
+		t.Errorf("Table in [Peer] must be untouched, got:\n%s", got)
+	}
+}

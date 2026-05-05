@@ -126,11 +126,17 @@ func (c *Controller) syncWireGuard(ctx context.Context, st *store.Store) ([]stri
 			return nil, fmt.Errorf("upstream %d (%q) interface name %q collides with ingress interface", t.ID, t.Name, t.InterfaceName)
 		}
 		p := filepath.Join(wgquick.WireguardDir(c.DataDir), t.InterfaceName+".conf")
-		// Удаляем DNS из секции [Interface]: иначе awg-quick попытается
-		// вызвать resolvconf, которого нет в минимальном Debian-образе, и
-		// упадёт с exit 127, откатив уже поднятый интерфейс. Для апстримов
-		// системный resolver контейнера трогать не нужно.
+		// Готовим конфиг апстрима для awg-quick:
+		//  1. DNS=...   — удаляем, чтобы awg-quick не звал resolvconf
+		//                (его нет в минимальном Debian-образе → exit 127).
+		//  2. Table=off — нужно, чтобы awg-quick НЕ настраивал собственный
+		//                policy routing (fwmark + ip rule/route + sysctl
+		//                src_valid_mark): он дублирует Controller.Apply
+		//                и падает на `sysctl: permission denied` (в Docker
+		//                /proc/sys смонтирован read-only). С Table=off
+		//                awg-quick поднимет только сам интерфейс.
 		confText := wgquick.StripInterfaceDirective(t.ConfigText, "DNS")
+		confText = wgquick.SetInterfaceDirective(confText, "Table", "off")
 		if err := os.WriteFile(p, []byte(confText), 0o600); err != nil {
 			return nil, err
 		}

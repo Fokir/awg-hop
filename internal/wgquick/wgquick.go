@@ -49,6 +49,38 @@ func Up(ctx context.Context, ex Exec, quickBin, confAbsPath string) error {
 	return err
 }
 
+// SetInterfaceDirective гарантирует наличие `key = value` в секции [Interface]:
+// все существующие строки с этим ключом удаляются, а одна новая вставляется
+// сразу после заголовка `[Interface]`. Если секции нет — она создаётся в начале.
+//
+// Используется, чтобы принудительно проставить `Table = off` для апстрим-конфигов:
+// иначе awg-quick при `AllowedIPs = 0.0.0.0/0` сам пытается настроить policy
+// routing (fwmark + ip rule + ip route + sysctl), что (а) дублирует логику
+// Controller.Apply, (б) падает на `sysctl: permission denied` в Docker, где
+// /proc/sys смонтирован read-only.
+func SetInterfaceDirective(conf, key, value string) string {
+	cleaned := StripInterfaceDirective(conf, key)
+	insert := key + " = " + value + "\n"
+	lines := splitLinesPreserveCRLF(cleaned)
+	for i, line := range lines {
+		if strings.EqualFold(strings.TrimSpace(line), "[Interface]") {
+			eol := "\n"
+			if strings.HasSuffix(line, "\r\n") {
+				eol = "\r\n"
+				insert = key + " = " + value + "\r\n"
+			}
+			if !strings.HasSuffix(line, "\n") {
+				lines[i] = line + eol
+			}
+			out := append([]string{}, lines[:i+1]...)
+			out = append(out, insert)
+			out = append(out, lines[i+1:]...)
+			return strings.Join(out, "")
+		}
+	}
+	return "[Interface]\n" + insert + cleaned
+}
+
 // StripInterfaceDirective удаляет указанные ключи из секции [Interface].
 // Используется, когда мы поднимаем туннель через wg-quick/awg-quick в
 // контейнере без resolvconf/systemd-resolved: строка `DNS = ...` заставит
