@@ -74,6 +74,17 @@ func (c *Controller) syncWireGuard(ctx context.Context, st *store.Store) ([]stri
 	if err != nil {
 		return nil, err
 	}
+	// Самолечение для уже забутстрапленных установок: если в БД остались
+	// нулевые H1..H4 или пустые S1/S2 — генерим валидные значения и
+	// сохраняем, иначе `awg setconf` отвергнет конфиг с Invalid argument.
+	if changed, derr := amnezia.EnsureAmneziaDefaults(&in); derr != nil {
+		return nil, fmt.Errorf("ensure amnezia defaults: %w", derr)
+	} else if changed {
+		if uerr := st.UpdateIngressSettings(ctx, in); uerr != nil {
+			return nil, fmt.Errorf("persist amnezia defaults: %w", uerr)
+		}
+		c.Log.Info("netctl: ingress amnezia defaults regenerated and persisted")
+	}
 	if err := wgquick.ValidateInterfaceName(in.InterfaceName); err != nil {
 		return nil, err
 	}
@@ -97,6 +108,7 @@ func (c *Controller) syncWireGuard(ctx context.Context, st *store.Store) ([]stri
 	var paths []string
 	paths = append(paths, ingressPath)
 	if err := wgquick.Up(ctx, c.Runner, c.QuickBin, ingressPath); err != nil {
+		c.Log.Warn("netctl: awg-quick up (ingress) failed", "iface", in.InterfaceName, "config", ingressPath, "err", err)
 		return nil, err
 	}
 
@@ -113,6 +125,7 @@ func (c *Controller) syncWireGuard(ctx context.Context, st *store.Store) ([]stri
 		}
 		paths = append(paths, p)
 		if err := wgquick.Up(ctx, c.Runner, c.QuickBin, p); err != nil {
+			c.Log.Warn("netctl: awg-quick up (upstream) failed", "upstream_id", t.ID, "iface", t.InterfaceName, "config", p, "err", err)
 			return nil, err
 		}
 	}

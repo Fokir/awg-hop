@@ -102,6 +102,13 @@ func (h *Handlers) Bootstrap(w http.ResponseWriter, r *http.Request) {
 	if in.Jc == 0 {
 		in.Jc = 4
 	}
+	// Заполняем обфускационные параметры AmneziaWG (S1/S2 и заголовочные
+	// маркеры H1..H4) криптостойкими случайными значениями, если фронтенд
+	// их не передал. Без этого `awg setconf` падает с Invalid argument.
+	if _, err := amnezia.EnsureAmneziaDefaults(&in); err != nil {
+		respond.Error(w, http.StatusInternalServerError, "amnezia_defaults", err.Error())
+		return
+	}
 
 	srvPriv, srvPub, err := wgk.GenerateKeyPair()
 	if err != nil {

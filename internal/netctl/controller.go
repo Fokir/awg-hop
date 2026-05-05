@@ -74,6 +74,7 @@ func (c *Controller) setErr(err error) {
 func (c *Controller) Apply(ctx context.Context, st *store.Store) error {
 	prevPol, _ := c.loadState()
 	if err := c.undo(ctx, prevPol); err != nil {
+		c.Log.Warn("netctl: undo policy routing failed", "err", err)
 		c.setErr(err)
 		return err
 	}
@@ -81,12 +82,14 @@ func (c *Controller) Apply(ctx context.Context, st *store.Store) error {
 	c.undoNAT(ctx, prevNAT)
 
 	if err := c.teardownWireGuard(ctx); err != nil {
+		c.Log.Warn("netctl: teardown wireguard failed", "err", err)
 		c.setErr(err)
 		return err
 	}
 
 	wgPaths, err := c.syncWireGuard(ctx, st)
 	if err != nil {
+		c.Log.Warn("netctl: sync wireguard failed", "err", err)
 		c.setErr(err)
 		return err
 	}
@@ -130,6 +133,7 @@ func (c *Controller) Apply(ctx context.Context, st *store.Store) error {
 		}
 		tbl := domain.RoutingTableID(t.ID)
 		if _, err := c.Runner.Run(ctx, c.IPBin, "route", "replace", "default", "dev", t.InterfaceName, "table", strconv.Itoa(tbl)); err != nil {
+			c.Log.Warn("netctl: ip route replace failed", "iface", t.InterfaceName, "table", tbl, "err", err)
 			c.setErr(err)
 			return err
 		}
@@ -169,6 +173,7 @@ func (c *Controller) Apply(ctx context.Context, st *store.Store) error {
 			tbl := domain.RoutingTableID(tid)
 			pref := domain.RulePreference(cl.ID)
 			if _, err := c.Runner.Run(ctx, c.IPBin, "rule", "add", "from", from, "table", strconv.Itoa(tbl), "pref", strconv.Itoa(pref)); err != nil {
+				c.Log.Warn("netctl: ip rule add failed", "from", from, "table", tbl, "pref", pref, "err", err)
 				c.setErr(err)
 				return err
 			}
@@ -178,6 +183,7 @@ func (c *Controller) Apply(ctx context.Context, st *store.Store) error {
 	}
 
 	if err := c.applyNAT(ctx, natRules); err != nil {
+		c.Log.Warn("netctl: apply NAT failed", "rules", len(natRules), "err", err)
 		c.setErr(err)
 		return err
 	}
