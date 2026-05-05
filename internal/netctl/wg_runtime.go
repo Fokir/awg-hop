@@ -126,7 +126,12 @@ func (c *Controller) syncWireGuard(ctx context.Context, st *store.Store) ([]stri
 			return nil, fmt.Errorf("upstream %d (%q) interface name %q collides with ingress interface", t.ID, t.Name, t.InterfaceName)
 		}
 		p := filepath.Join(wgquick.WireguardDir(c.DataDir), t.InterfaceName+".conf")
-		if err := os.WriteFile(p, []byte(t.ConfigText), 0o600); err != nil {
+		// Удаляем DNS из секции [Interface]: иначе awg-quick попытается
+		// вызвать resolvconf, которого нет в минимальном Debian-образе, и
+		// упадёт с exit 127, откатив уже поднятый интерфейс. Для апстримов
+		// системный resolver контейнера трогать не нужно.
+		confText := wgquick.StripInterfaceDirective(t.ConfigText, "DNS")
+		if err := os.WriteFile(p, []byte(confText), 0o600); err != nil {
 			return nil, err
 		}
 		paths = append(paths, p)
