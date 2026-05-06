@@ -122,6 +122,17 @@
     if (!id) return '';
     return upstreams.find((t) => t.id === id)?.name ?? `#${id}`;
   }
+
+  function connStatus(c: Client): 'online' | 'offline' | 'never' {
+    if (!c.status?.latest_handshake_unix) return 'never';
+    return isFreshHandshake(c.status.latest_handshake_unix) ? 'online' : 'offline';
+  }
+
+  const connStatusTitle: Record<string, string> = {
+    online: 'Онлайн',
+    offline: 'Оффлайн',
+    never: 'Никогда не подключался',
+  };
 </script>
 
 <section>
@@ -146,7 +157,12 @@
     <tbody>
       {#each clients as c (c.id)}
         <tr class:disabled={!c.enabled}>
-          <td>{c.name}</td>
+          <td>
+            <span class="name-cell">
+              <span class="dot dot-{connStatus(c)}" title={connStatusTitle[connStatus(c)]}></span>
+              {c.name}
+            </span>
+          </td>
           <td><code>{c.allowed_ips}</code></td>
           <td>
             {#if c.upstream_type === 'direct'}
@@ -402,6 +418,27 @@
   input[type='radio'] {
     width: auto;
     margin: 0;
+  }
+  .name-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot-online {
+    background: #10b981;
+  }
+  .dot-offline {
+    background: #f87171;
+  }
+  .dot-never {
+    background: #d1d5db;
   }
   details summary {
     cursor: pointer;

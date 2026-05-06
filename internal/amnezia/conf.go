@@ -29,7 +29,9 @@ func BuildClientConf(c domain.Client, s domain.IngressSettings, sys domain.Syste
 	if strings.TrimSpace(s.DNSServers) != "" {
 		fmt.Fprintf(&b, "DNS = %s\n", s.DNSServers)
 	}
-	fmt.Fprintf(&b, "MTU = %d\n", s.MTU)
+	// MTU не пишем в клиентский конфиг: многие «эталонные» конфиги Amnezia
+	// обходятся без строки MTU — клиент/ОС подбирают разумное значение.
+	// На сервере MTU по-прежнему задаётся в BuildIngressServerConf.
 	fmt.Fprintf(&b, "Jc = %d\n", s.Jc)
 	fmt.Fprintf(&b, "Jmin = %d\n", s.Jmin)
 	fmt.Fprintf(&b, "Jmax = %d\n", s.Jmax)

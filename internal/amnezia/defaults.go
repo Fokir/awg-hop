@@ -14,8 +14,11 @@ import (
 // сообщений WireGuard (1, 2, 3, 4) маркеров H1..H4 — иначе `awg setconf`
 // возвращает `Invalid argument`. Аналогично S1/S2 (junk-padding для
 // handshake init/response) — должны быть заданы и не приводить к коллизии
-// размеров пакетов рукопожатия. Этот файл — единственный источник истины
-// для генерации дефолтов.
+// размеров пакетов рукопожатия. Для AmneziaWG 2.0+ нужны и S3/S4 (padding для
+// cookie reply и transport): без них в экспортированном клиентском конфиге
+// клиент и сервер расходятся по формату пакетов после handshake — трафик не
+// ходит (см. amnezia-vpn/amnezia-client#2219). Этот файл — единственный
+// источник истины для генерации дефолтов.
 
 const (
 	headerMarkerMin uint32 = 5
@@ -31,7 +34,7 @@ const (
 )
 
 // EnsureAmneziaDefaults проставляет криптостойкие случайные значения для
-// S1/S2/H1..H4, если они отсутствуют или нулевые. Возвращает true,
+// S1/S2/S3/S4/H1..H4, если они отсутствуют или нулевые. Возвращает true,
 // если хоть одно поле было изменено — вызывающий код может на этом
 // основании сохранить настройки в БД.
 //
@@ -56,6 +59,26 @@ func EnsureAmneziaDefaults(in *domain.IngressSettings) (bool, error) {
 			return false, err
 		}
 		in.S2 = strconv.Itoa(v)
+		changed = true
+	}
+
+	s1v, _ := strconv.Atoi(strings.TrimSpace(in.S1))
+	s2v, _ := strconv.Atoi(strings.TrimSpace(in.S2))
+	if strings.TrimSpace(in.S3) == "" {
+		v, err := randomJunkPaddingExcluding(s1v, s2v)
+		if err != nil {
+			return false, err
+		}
+		in.S3 = strconv.Itoa(v)
+		changed = true
+	}
+	s3v, _ := strconv.Atoi(strings.TrimSpace(in.S3))
+	if strings.TrimSpace(in.S4) == "" {
+		v, err := randomJunkPaddingExcluding(s1v, s2v, s3v)
+		if err != nil {
+			return false, err
+		}
+		in.S4 = strconv.Itoa(v)
 		changed = true
 	}
 

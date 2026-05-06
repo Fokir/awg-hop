@@ -41,6 +41,28 @@ func TestEnsureAmneziaDefaults_FillsZeroFields(t *testing.T) {
 		t.Errorf("S1+%d must not equal S2; got S1=%d S2=%d", initiationOverhead, s1, s2)
 	}
 
+	if in.S3 == "" || in.S4 == "" {
+		t.Fatalf("S3/S4 must be set: S3=%q S4=%q", in.S3, in.S4)
+	}
+	s3, err := strconv.Atoi(in.S3)
+	if err != nil {
+		t.Fatalf("S3 not numeric: %q", in.S3)
+	}
+	s4, err := strconv.Atoi(in.S4)
+	if err != nil {
+		t.Fatalf("S4 not numeric: %q", in.S4)
+	}
+	if s3 < junkPaddingMin || s3 > junkPaddingMax {
+		t.Errorf("S3 out of range: %d not in [%d,%d]", s3, junkPaddingMin, junkPaddingMax)
+	}
+	if s4 < junkPaddingMin || s4 > junkPaddingMax {
+		t.Errorf("S4 out of range: %d not in [%d,%d]", s4, junkPaddingMin, junkPaddingMax)
+	}
+	seenPad := map[int]struct{}{s1: {}, s2: {}, s3: {}, s4: {}}
+	if len(seenPad) != 4 {
+		t.Errorf("S1..S4 must be pairwise distinct: %d %d %d %d", s1, s2, s3, s4)
+	}
+
 	hs := []int64{in.H1, in.H2, in.H3, in.H4}
 	seen := map[int64]struct{}{}
 	for i, h := range hs {
@@ -60,6 +82,7 @@ func TestEnsureAmneziaDefaults_FillsZeroFields(t *testing.T) {
 func TestEnsureAmneziaDefaults_PreservesUserValues(t *testing.T) {
 	in := domain.IngressSettings{
 		S1: "33", S2: "74",
+		S3: "51", S4: "88",
 		H1: 100, H2: 200, H3: 300, H4: 400,
 	}
 	changed, err := EnsureAmneziaDefaults(&in)
@@ -71,6 +94,9 @@ func TestEnsureAmneziaDefaults_PreservesUserValues(t *testing.T) {
 	}
 	if in.S1 != "33" || in.S2 != "74" {
 		t.Errorf("S1/S2 must be preserved: S1=%q S2=%q", in.S1, in.S2)
+	}
+	if in.S3 != "51" || in.S4 != "88" {
+		t.Errorf("S3/S4 must be preserved: S3=%q S4=%q", in.S3, in.S4)
 	}
 	if in.H1 != 100 || in.H2 != 200 || in.H3 != 300 || in.H4 != 400 {
 		t.Errorf("H1..H4 must be preserved: %d %d %d %d", in.H1, in.H2, in.H3, in.H4)

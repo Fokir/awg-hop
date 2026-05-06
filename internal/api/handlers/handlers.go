@@ -541,6 +541,22 @@ func (h *Handlers) DeleteClient(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func sanitizeFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|' || r == '\x00' {
+			b.WriteRune('_')
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	s := strings.TrimSpace(b.String())
+	if s == "" {
+		return "awghop-client"
+	}
+	return s
+}
+
 func (h *Handlers) buildClientConfig(ctx context.Context, c domain.Client) (string, error) {
 	in, err := h.Store.GetIngressSettings(ctx)
 	if err != nil {
@@ -574,7 +590,7 @@ func (h *Handlers) ClientConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="awghop-client-`+strconv.FormatInt(id, 10)+`.conf"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeFilename(c.Name)+`.conf"`)
 	_, _ = w.Write([]byte(conf))
 }
 
